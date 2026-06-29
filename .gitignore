@@ -39,3 +39,15 @@ ENV/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local scratch scripts and debug logs
+scratch/*.log
+scratch/*.png
+scratch/current_live_feed.jpg
+scratch/live_snapshot.jpg
+scratch/raw_frame.jpg
+
+# Testing artifacts and coverage
+.pytest_cache/
+.coverage
+htmlcov/
