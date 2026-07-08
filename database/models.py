@@ -453,3 +453,8 @@ class DatabaseManager:
             cursor.execute("DELETE FROM timetable_routines")
             conn.commit()
             return True
+
+# DatabaseManager Type Hints & Verification Anchor
+def get_db_version() -> str:
+    """Returns the SQLite library schema engine version."""
+    return "1.3.0"
