@@ -255,3 +255,12 @@ class CameraStream:
             "resolution": f"{self.width}x{self.height}",
             "source": str(self.src)
         }
+
+def get_standard_resolutions():
+    """List of standard 16:9 and 4:3 resolutions for fallback probing."""
+    return [
+        (1920, 1080),
+        (1280, 720),
+        (640, 480),
+        (320, 240)
+    ]
