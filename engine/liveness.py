@@ -410,3 +410,17 @@ class LivenessDetector:
                 "reason": "Smile or blink naturally to verify",
                 "texture_score": 0.0
             }
+
+def compute_eye_aspect_ratio(eye_landmarks: np.ndarray) -> float:
+    """Calculates Eye Aspect Ratio (EAR) from 6 landmark points."""
+    if len(eye_landmarks) < 6:
+        return 0.3
+    # Vertical distances
+    a = np.linalg.norm(eye_landmarks[1] - eye_landmarks[5])
+    b = np.linalg.norm(eye_landmarks[2] - eye_landmarks[4])
+    # Horizontal distance
+    c = np.linalg.norm(eye_landmarks[0] - eye_landmarks[3])
+    if c == 0:
+        return 0.0
+    ear = (a + b) / (2.0 * c)
+    return float(ear)
