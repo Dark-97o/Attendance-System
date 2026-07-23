@@ -84,3 +84,9 @@ class LightingPreprocessor:
         }
 
         return enhanced_bgr, metrics
+
+def calculate_laplacian_variance(gray_image: np.ndarray) -> float:
+    """Calculates focus blur score using variance of the Laplacian."""
+    import cv2
+    laplacian = cv2.Laplacian(gray_image, cv2.CV_64F)
+    return float(laplacian.var())
