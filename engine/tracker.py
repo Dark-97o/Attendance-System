@@ -180,3 +180,20 @@ class MultiFaceTracker:
                 tf.consecutive_spoof_frames = 1
         self.tracked_faces[self.next_track_id] = tf
         self.next_track_id += 1
+
+def compute_iou(boxA, boxB) -> float:
+    """Computes Intersection over Union (IoU) between two bounding boxes [x, y, w, h]."""
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    xB = min(boxA[0] + boxA[2], boxB[0] + boxB[2])
+    yB = min(boxA[1] + boxA[3], boxB[1] + boxB[3])
+
+    inter_w = max(0, xB - xA)
+    inter_h = max(0, yB - yA)
+    inter_area = inter_w * inter_h
+
+    boxA_area = boxA[2] * boxA[3]
+    boxB_area = boxB[2] * boxB[3]
+    union_area = float(boxA_area + boxB_area - inter_area)
+
+    return inter_area / union_area if union_area > 0 else 0.0
