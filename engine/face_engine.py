@@ -456,3 +456,10 @@ class FaceEngine:
         self.db.add_face_embedding(student_id, emb)
         self.refresh_enrolled_cache()
         return True, f"Face embedding enrolled for {student_id}"
+
+def batch_cosine_similarity(probe_vector: np.ndarray, gallery_matrix: np.ndarray) -> np.ndarray:
+    """Vectorized cosine similarity against all gallery embeddings."""
+    if gallery_matrix.shape[0] == 0:
+        return np.array([], dtype=np.float32)
+    dot_products = np.dot(gallery_matrix, probe_vector)
+    return dot_products
