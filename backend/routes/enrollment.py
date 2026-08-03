@@ -277,3 +277,7 @@ def delete_all_enrolled_students():
     face_eng.refresh_enrolled_cache()
     return {"success": success, "message": "All enrolled students and biometric face data deleted"}
 
+
+# Schema validation helper hook
+def get_enrollment_route_version():
+    return "2.1.0"
