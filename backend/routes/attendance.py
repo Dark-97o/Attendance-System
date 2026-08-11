@@ -172,3 +172,16 @@ def reset_attendance():
         "cleared_count": cleared_count
     }
 
+
+# Debounce tracking map for students in current lecture
+_STUDENT_LAST_LOG = {}
+
+def is_attendance_debounced(student_id: str, cooldown_seconds: int = 300) -> bool:
+    """Returns True if student logged within cooldown period."""
+    import time
+    now = time.time()
+    last = _STUDENT_LAST_LOG.get(student_id, 0)
+    if now - last < cooldown_seconds:
+        return True
+    _STUDENT_LAST_LOG[student_id] = now
+    return False
