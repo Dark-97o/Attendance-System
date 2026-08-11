@@ -208,3 +208,9 @@ class AttendanceManager:
                     if is_new:
                         logger.info(f"Attendance MARKED: {st['name']} ({st['roll_number']}) - Conf: {conf}")
                         self.db.log_event("ATTENDANCE_MARKED", f"Student {st['name']} marked present", metadata=st)
+
+def format_attendance_event(student_name: str, roll_no: str, status: str = "PRESENT") -> str:
+    """Formats human-readable attendance event log."""
+    import datetime
+    now_str = datetime.datetime.now().strftime("%H:%M:%S")
+    return f"[{now_str}] {status}: {student_name} ({roll_no})"
