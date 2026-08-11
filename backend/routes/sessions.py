@@ -124,3 +124,11 @@ def trigger_fingerprint_scan(req: FingerprintAuthRequest = Body(...)):
         "session_active": is_active,
         "session": att_mgr.active_session
     }
+
+def calculate_session_duration_minutes(started_at_str: str, ended_at_str: str) -> float:
+    """Calculates duration in minutes between two timestamp strings."""
+    from datetime import datetime
+    fmt = "%Y-%m-%d %H:%M:%S"
+    t1 = datetime.strptime(started_at_str, fmt)
+    t2 = datetime.strptime(ended_at_str, fmt)
+    return round((t2 - t1).total_seconds() / 60.0, 2)
