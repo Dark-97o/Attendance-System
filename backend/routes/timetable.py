@@ -252,3 +252,14 @@ async def get_timetable_status(class_name: Optional[str] = None, db: DatabaseMan
         "status": target_status,
         "classes": class_status_map
     }
+
+def check_timetable_conflict(existing_routines, new_day, new_start, new_end, exclude_id=None):
+    """Checks if a proposed routine conflicts with any existing slot for the same teacher or class."""
+    from backend.utils.time_utils import slots_overlap
+    for r in existing_routines:
+        if exclude_id and r.get('id') == exclude_id:
+            continue
+        if r.get('day_of_week') == new_day:
+            if slots_overlap(r.get('start_time'), r.get('end_time'), new_start, new_end):
+                return True, f"Conflict with {r.get('subject')} ({r.get('start_time')}-{r.get('end_time')})"
+    return False, None
