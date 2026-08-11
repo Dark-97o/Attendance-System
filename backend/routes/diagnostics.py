@@ -231,3 +231,12 @@ def list_available_cameras():
         "current_source": current_src,
         "cameras": available
     }
+
+def get_hardware_telemetry():
+    """Returns system health summary."""
+    import platform
+    return {
+        "os": platform.system(),
+        "release": platform.release(),
+        "arch": platform.machine()
+    }
