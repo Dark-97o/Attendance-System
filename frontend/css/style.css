@@ -2260,3 +2260,11 @@ body {
     animation: fadeInScale 0.25s ease-out;
 }
 
+
+/* Responsive container adjustments */
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+}
