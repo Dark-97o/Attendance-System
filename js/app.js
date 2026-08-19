@@ -2863,3 +2863,8 @@ ECE,Tuesday,10:00,11:00,Digital Electronics,Prof. Claude Shannon,FAC-ECE-01,Room
 };
 
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+// Toast notification helper
+function showSystemToast(message, type = 'info') {
+    console.log(`[Toast ${type.toUpperCase()}]: ${message}`);
+}
