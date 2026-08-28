@@ -86,6 +86,17 @@ def init_db(db_path: str = DB_PATH) -> None:
     );
     """)
 
+    # Teacher Face Embeddings table (Vector storage for enrolled faculty faces)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS teacher_face_embeddings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        teacher_id TEXT NOT NULL,
+        embedding_json TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (teacher_id) REFERENCES teachers(teacher_id) ON DELETE CASCADE
+    );
+    """)
+
     # Lecture Sessions (Gated strictly by Teacher Fingerprint Auth)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS lecture_sessions (
