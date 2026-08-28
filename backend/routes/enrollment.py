@@ -143,7 +143,10 @@ async def enroll_face_from_upload(
         photo_path = os.path.join(faces_dir, photo_filename)
         cv2.imwrite(photo_path, img_bgr)
 
-        db.register_teacher(teacher_id=tid, name=tname, department=tdept, photo_path=photo_path)
+        try:
+            db.register_teacher(teacher_id=tid, name=tname, department=tdept, photo_path=photo_path)
+        except Exception as db_err:
+            raise HTTPException(status_code=400, detail=f"Could not save teacher: {db_err}")
         success, msg = face_eng.enroll_face_image(tid, img_bgr)
         identifier = tid
         display_name = tname
@@ -195,13 +198,18 @@ def snap_and_enroll(payload: Dict[str, Any]):
         tid = payload.get("teacher_id") or payload.get("id") or f"T_{int(time.time())}"
         tname = payload.get("name") or f"Faculty {tid}"
         tdept = payload.get("department") or "CSE"
-        slot = int(payload.get("fingerprint_id", 1))
+        # Use None when fingerprint_id not provided — avoid UNIQUE constraint collision with slot 1
+        raw_slot = payload.get("fingerprint_id")
+        slot = int(raw_slot) if raw_slot is not None and str(raw_slot).strip() not in ("", "null", "None") else None
 
         photo_filename = f"teacher_{tid}_{int(time.time())}.jpg"
         photo_path = os.path.join(faces_dir, photo_filename)
         cv2.imwrite(photo_path, frame)
 
-        db.register_teacher(teacher_id=tid, name=tname, department=tdept, fingerprint_id=slot, photo_path=photo_path)
+        try:
+            db.register_teacher(teacher_id=tid, name=tname, department=tdept, fingerprint_id=slot, photo_path=photo_path)
+        except Exception as db_err:
+            raise HTTPException(status_code=400, detail=f"Could not save teacher: {db_err}")
         success, msg = face_eng.enroll_face_image(tid, frame)
         identifier = tid
         display_name = tname
