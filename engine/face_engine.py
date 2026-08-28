@@ -453,9 +453,17 @@ class FaceEngine:
                 crop = image_bgr[fy:fy + fh, fx:fx + fw]
             emb = self.extract_face_embedding(crop).tolist()
 
-        self.db.add_face_embedding(student_id, emb)
+        self.db.add_face_embedding(student_id, emb) if not self._is_teacher_id(student_id) else self.db.add_teacher_face_embedding(student_id, emb)
         self.refresh_enrolled_cache()
         return True, f"Face embedding enrolled for {student_id}"
+
+    def _is_teacher_id(self, entity_id: str) -> bool:
+        """Returns True if this ID belongs to a teacher record (not a student)."""
+        try:
+            t = self.db.get_teacher_by_id(entity_id)
+            return t is not None
+        except Exception:
+            return False
 
 def batch_cosine_similarity(probe_vector: np.ndarray, gallery_matrix: np.ndarray) -> np.ndarray:
     """Vectorized cosine similarity against all gallery embeddings."""
