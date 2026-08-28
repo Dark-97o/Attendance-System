@@ -29,6 +29,13 @@ class DatabaseManager:
     def register_teacher(self, teacher_id: str, name: str, department: str, fingerprint_id: Optional[int] = None, photo_path: Optional[str] = None) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
+            # If a fingerprint slot is provided, release it from any OTHER teacher first
+            # to avoid UNIQUE constraint collision on teachers.fingerprint_id
+            if fingerprint_id is not None:
+                cursor.execute(
+                    "UPDATE teachers SET fingerprint_id = NULL WHERE fingerprint_id = ? AND teacher_id != ?",
+                    (fingerprint_id, teacher_id)
+                )
             cursor.execute("""
                 INSERT INTO teachers (teacher_id, name, department, fingerprint_id, photo_path)
                 VALUES (?, ?, ?, ?, ?)
@@ -100,17 +107,39 @@ class DatabaseManager:
             conn.commit()
             return True
 
-    def get_all_enrolled_faces(self) -> List[Dict[str, Any]]:
-        """Returns list of student face vectors with student metadata for fast in-memory matcher."""
+    def add_teacher_face_embedding(self, teacher_id: str, embedding: List[float]) -> bool:
+        """Stores a face embedding for a teacher in the teacher_face_embeddings table."""
         with self._get_conn() as conn:
             cursor = conn.cursor()
+            # Ensure the table exists (for DBs created before this migration)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS teacher_face_embeddings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    teacher_id TEXT NOT NULL,
+                    embedding_json TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (teacher_id) REFERENCES teachers(teacher_id) ON DELETE CASCADE
+                );
+            """)
+            cursor.execute("""
+                INSERT INTO teacher_face_embeddings (teacher_id, embedding_json)
+                VALUES (?, ?)
+            """, (teacher_id, json.dumps(embedding)))
+            conn.commit()
+            return True
+
+    def get_all_enrolled_faces(self) -> List[Dict[str, Any]]:
+        """Returns all student AND teacher face vectors with metadata for the in-memory matcher."""
+        results = []
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            # Student face embeddings
             cursor.execute("""
                 SELECT s.student_id, s.name, s.roll_number, s.class_section, s.photo_path,
                        fe.id as embedding_id, fe.embedding_json
                 FROM students s
                 JOIN face_embeddings fe ON s.student_id = fe.student_id
             """)
-            results = []
             for row in cursor.fetchall():
                 results.append({
                     "student_id": row["student_id"],
@@ -120,7 +149,28 @@ class DatabaseManager:
                     "photo_path": row["photo_path"],
                     "embedding": json.loads(row["embedding_json"])
                 })
-            return results
+
+            # Teacher face embeddings (stored separately to avoid FK conflict)
+            try:
+                cursor.execute("""
+                    SELECT t.teacher_id, t.name, t.department, t.photo_path,
+                           tfe.embedding_json
+                    FROM teachers t
+                    JOIN teacher_face_embeddings tfe ON t.teacher_id = tfe.teacher_id
+                """)
+                for row in cursor.fetchall():
+                    results.append({
+                        "student_id": row["teacher_id"],
+                        "name": row["name"],
+                        "roll_number": row["teacher_id"],
+                        "class_section": row["department"],
+                        "photo_path": row["photo_path"],
+                        "embedding": json.loads(row["embedding_json"])
+                    })
+            except Exception:
+                pass  # teacher_face_embeddings may not exist in older DBs
+
+        return results
 
     def list_students(self) -> List[Dict[str, Any]]:
         with self._get_conn() as conn:
