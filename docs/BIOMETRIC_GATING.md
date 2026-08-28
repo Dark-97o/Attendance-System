@@ -9,3 +9,8 @@ UPDATE teachers SET fingerprint_id = NULL WHERE fingerprint_id = ? AND teacher_i
 
 ## SFace Multi-Modal Matching
 The system evaluates facial vectors against enrolled student and teacher embeddings using in-memory cosine dot-product indexing.
+
+## Attendance Gating Rules
+- **Faculty Presence**: A lecture session is only active while teacher authentication is confirmed.
+- **Debounce Interval**: Default 300-second debounce prevents student multi-counting.
+- **Anti-Spoofing Interlock**: Spoof detection rejection immediately invalidates recognition events.
