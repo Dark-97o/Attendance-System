@@ -1,0 +1,21 @@
+name: Code Quality & Linting
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+    - name: Run Python syntax validation
+      run: |
+        python -m py_compile backend/main.py backend/config.py backend/schemas.py
+        python -m py_compile database/models.py database/db.py engine/face_engine.py
