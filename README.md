@@ -126,3 +126,26 @@ In addition to traditional Haar/YuNet detection, the system now integrates the O
 - **Department Specialization:** Configured for streamlined CSE and ECE departmental monitoring.
 - **Retake Attendance & Reset:** Session-level and daily attendance record flushing with camera tracking debounce reset.
 - **Automated Summary Dispatch:** Direct EmailJS integration for instantaneous lecture attendance reports.
+
+## Automated Testing & CI
+
+Execute the comprehensive test suite locally with `pytest`:
+
+```bash
+# Run all unit tests
+python -m pytest tests/ -v
+
+# Run specific test modules
+python -m pytest tests/test_ear_blink.py
+python -m pytest tests/test_student_models.py
+python -m pytest tests/test_timetable_conflicts.py
+```
+
+## System Architecture & Biometrics Reference
+Detailed architecture documents and specifications are available under `docs/`:
+- [Database Schema & ERD](docs/DATABASE_SCHEMA.md)
+- [Vision & Anti-Spoofing Pipeline](docs/VISION_PIPELINE.md)
+- [Biometric Gating Architecture](docs/BIOMETRIC_GATING.md)
+- [Camera Hardware Setup](docs/CAMERA_SETUP.md)
+- [REST API Specification](docs/API_REFERENCE.md)
+- [Session Lifecycle Documentation](docs/SESSION_LIFECYCLE.md)
