@@ -1622,3 +1622,194 @@ body {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
 }
 
+/* ==========================================================================
+   Class-Wise Live Presence & Timetable Routine Alert Styles
+   ========================================================================== */
+
+@keyframes pulseYellowAlert {
+    0%, 100% {
+        background: rgba(245, 158, 11, 0.14);
+        border-color: #f59e0b;
+        box-shadow: 0 0 16px rgba(245, 158, 11, 0.45);
+    }
+    50% {
+        background: rgba(254, 243, 199, 0.4);
+        border-color: rgba(245, 158, 11, 0.4);
+        box-shadow: 0 0 4px rgba(245, 158, 11, 0.15);
+    }
+}
+
+.alert-teacher-late {
+    animation: pulseYellowAlert 1.1s infinite ease-in-out !important;
+    border: 2px solid #f59e0b !important;
+}
+
+.teacher-presence-card {
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 16px 20px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: all 0.3s ease;
+    margin-bottom: 16px;
+}
+
+.class-filter-bar {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 16px;
+    background: #ffffff;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-sm);
+}
+
+.btn-class-pill {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 700;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.btn-class-pill:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+.btn-class-pill.active {
+    background: var(--accent-indigo);
+    color: #ffffff;
+    border-color: var(--accent-indigo);
+    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+}
+
+.live-student-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 12px;
+}
+
+.student-presence-card {
+    background: #ffffff;
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.student-presence-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.student-presence-card.is-present {
+    border-left: 4px solid #10b981;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.04), #ffffff);
+}
+
+.student-presence-card.is-absent {
+    border-left: 4px solid #ef4444;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.03), #ffffff);
+    opacity: 0.85;
+}
+
+.badge-status-present {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    background: rgba(16, 185, 129, 0.15);
+    color: #059669;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.badge-status-absent {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 800;
+    background: rgba(239, 68, 68, 0.12);
+    color: #dc2626;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.badge-status-warning {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 800;
+    background: #fef3c7;
+    color: #b45309;
+    border: 1px solid #f59e0b;
+}
+
+/* Routine Upload Box */
+.routine-upload-box {
+    border: 2px dashed #cbd5e1;
+    border-radius: var(--radius-sm);
+    padding: 20px;
+    text-align: center;
+    background: #f8fafc;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.routine-upload-box:hover {
+    border-color: var(--accent-indigo);
+    background: rgba(79, 70, 229, 0.04);
+}
+
+/* EmailJS Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-content-card {
+    background: #ffffff;
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 520px;
+    padding: 26px 30px;
+    box-shadow: var(--shadow-xl);
+    border: 1px solid var(--border-color);
+    position: relative;
+    animation: fadeInScale 0.25s ease-out;
+}
+

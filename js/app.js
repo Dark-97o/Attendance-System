@@ -16,6 +16,16 @@ const App = {
     useEnrollWebcam: false,
     enrollMode: 'student',
     isResettingPassword: false,
+    selectedClassFilter: 'ALL',
+    cachedStudentsList: [],
+    cachedTeachersList: [],
+    timetableRoutines: [],
+    timetableMonitorInterval: null,
+    emailjsConfig: {
+        serviceId: '',
+        templateId: '',
+        publicKey: ''
+    },
 
     getApiUrl(endpoint) {
         if (window.location.protocol !== 'file:' && window.location.port === '8080') {
@@ -33,6 +43,10 @@ const App = {
         this.initClock();
         this.initFirebaseAuth();
         this.initVideoFeedWatchdog();
+        this.initClassFilters();
+        this.initTimetableMonitor();
+        this.initEmailJS();
+        this.fetchTodayAttendance();
     },
 
     bindEvents() {
@@ -50,11 +64,14 @@ const App = {
             toggleBtn.addEventListener('click', () => this.toggleLectureSession());
         }
 
-        // Enrollment Mode Switcher (Student vs Teacher)
+        // Enrollment Mode Switcher (Student vs Teacher vs Timetable)
         const btnModeStudent = document.getElementById('btnModeStudent');
         const btnModeTeacher = document.getElementById('btnModeTeacher');
+        const btnModeTimetable = document.getElementById('btnModeTimetable');
         const studentForm = document.getElementById('studentEnrollForm');
         const teacherForm = document.getElementById('teacherEnrollForm');
+        const timetableManagerBox = document.getElementById('timetableManagerBox');
+        const cameraAndFormsRow = document.getElementById('enrollCameraAndFormsRow');
         const btnLiveSnap = document.getElementById('btnLiveSnap');
 
         if (btnModeStudent && btnModeTeacher) {
@@ -62,6 +79,9 @@ const App = {
                 this.enrollMode = 'student';
                 btnModeStudent.classList.add('active');
                 btnModeTeacher.classList.remove('active');
+                if (btnModeTimetable) btnModeTimetable.classList.remove('active');
+                if (cameraAndFormsRow) cameraAndFormsRow.style.display = 'grid';
+                if (timetableManagerBox) timetableManagerBox.style.display = 'none';
                 if (studentForm) studentForm.style.display = 'block';
                 if (teacherForm) teacherForm.style.display = 'none';
                 if (btnLiveSnap) btnLiveSnap.innerHTML = '<i class="fa-solid fa-camera"></i> SNAP & ENROLL STUDENT FACE';
@@ -71,10 +91,26 @@ const App = {
                 this.enrollMode = 'teacher';
                 btnModeTeacher.classList.add('active');
                 btnModeStudent.classList.remove('active');
+                if (btnModeTimetable) btnModeTimetable.classList.remove('active');
+                if (cameraAndFormsRow) cameraAndFormsRow.style.display = 'grid';
+                if (timetableManagerBox) timetableManagerBox.style.display = 'none';
                 if (studentForm) studentForm.style.display = 'none';
                 if (teacherForm) teacherForm.style.display = 'block';
                 if (btnLiveSnap) btnLiveSnap.innerHTML = '<i class="fa-solid fa-camera"></i> SNAP & ENROLL TEACHER FACE';
             });
+
+            if (btnModeTimetable) {
+                btnModeTimetable.addEventListener('click', () => {
+                    this.enrollMode = 'timetable';
+                    btnModeTimetable.classList.add('active');
+                    btnModeStudent.classList.remove('active');
+                    btnModeTeacher.classList.remove('active');
+                    if (cameraAndFormsRow) cameraAndFormsRow.style.display = 'none';
+                    if (timetableManagerBox) timetableManagerBox.style.display = 'block';
+                    this.fetchTimetableRoutines();
+                    this.populateTeacherDropdownForRoutine();
+                });
+            }
         }
 
         // Desired Camera Switcher Dropdown in Enrollment Studio
@@ -208,6 +244,98 @@ const App = {
                     reader.readAsDataURL(file);
                 }
             });
+        }
+
+        // Timetable Period Form Submission
+        const timetableForm = document.getElementById('timetableForm');
+        if (timetableForm) {
+            timetableForm.addEventListener('submit', (e) => this.handleRoutineSubmit(e));
+        }
+
+        // Timetable CSV Dropzone & File Input
+        const routineDropZone = document.getElementById('routineDropZone');
+        const routineFileInput = document.getElementById('routineFileInput');
+        if (routineDropZone && routineFileInput) {
+            routineDropZone.addEventListener('click', () => routineFileInput.click());
+            routineDropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                routineDropZone.style.borderColor = 'var(--accent-indigo)';
+                routineDropZone.style.background = '#eef2ff';
+            });
+            routineDropZone.addEventListener('dragleave', () => {
+                routineDropZone.style.borderColor = '#cbd5e1';
+                routineDropZone.style.background = '#f8fafc';
+            });
+            routineDropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                routineDropZone.style.borderColor = '#cbd5e1';
+                routineDropZone.style.background = '#f8fafc';
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    this.handleRoutineUpload(files[0]);
+                }
+            });
+            routineFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    this.handleRoutineUpload(file);
+                    routineFileInput.value = '';
+                }
+            });
+        }
+
+        // Sample CSV Download & Clear Timetable Buttons
+        const btnDownloadSampleCsv = document.getElementById('btnDownloadSampleCsv');
+        if (btnDownloadSampleCsv) {
+            btnDownloadSampleCsv.addEventListener('click', () => this.downloadSampleCsv());
+        }
+
+        const btnClearAllRoutines = document.getElementById('btnClearAllRoutines');
+        if (btnClearAllRoutines) {
+            btnClearAllRoutines.addEventListener('click', () => this.clearAllTimetableRoutines());
+        }
+
+        // Routine Table Filters
+        const filterRoutineDay = document.getElementById('filterRoutineDay');
+        const filterRoutineClass = document.getElementById('filterRoutineClass');
+        const btnRefreshTimetable = document.getElementById('btnRefreshTimetable');
+        if (filterRoutineDay) {
+            filterRoutineDay.addEventListener('change', () => this.renderTimetableRoutines());
+        }
+        if (filterRoutineClass) {
+            filterRoutineClass.addEventListener('change', () => this.renderTimetableRoutines());
+        }
+        if (btnRefreshTimetable) {
+            btnRefreshTimetable.addEventListener('click', () => this.fetchTimetableRoutines());
+        }
+
+        // EmailJS Daily Summary Modal Controls
+        const btnOpenEmailModal = document.getElementById('btnOpenEmailModal');
+        const btnCloseEmailModal = document.getElementById('btnCloseEmailModal');
+        const emailModal = document.getElementById('emailModal');
+        const btnSaveEmailjsConfig = document.getElementById('btnSaveEmailjsConfig');
+        const btnTestEmailPreview = document.getElementById('btnTestEmailPreview');
+        const btnDispatchDailyEmails = document.getElementById('btnDispatchDailyEmails');
+
+        if (btnOpenEmailModal && emailModal) {
+            btnOpenEmailModal.addEventListener('click', () => {
+                emailModal.style.display = 'flex';
+                this.updateEmailRecipientCount();
+            });
+        }
+        if (btnCloseEmailModal && emailModal) {
+            btnCloseEmailModal.addEventListener('click', () => {
+                emailModal.style.display = 'none';
+            });
+        }
+        if (btnSaveEmailjsConfig) {
+            btnSaveEmailjsConfig.addEventListener('click', () => this.saveEmailjsConfig());
+        }
+        if (btnTestEmailPreview) {
+            btnTestEmailPreview.addEventListener('click', () => this.previewDailyEmailSummary());
+        }
+        if (btnDispatchDailyEmails) {
+            btnDispatchDailyEmails.addEventListener('click', () => this.dispatchDailyAttendanceEmails());
         }
 
         // Export CSV Button
@@ -772,6 +900,7 @@ const App = {
         this.presentStudents.add(student.student_id);
         const presentEl = document.getElementById('kpiPresentCount');
         if (presentEl) presentEl.textContent = this.presentStudents.size;
+        this.renderLiveClassPresence();
 
         // Create item element
         const item = document.createElement('div');
@@ -1028,6 +1157,7 @@ const App = {
         const name = document.getElementById('enrollName').value.trim();
         const roll = document.getElementById('enrollRoll').value.trim();
         const section = document.getElementById('enrollSection').value.trim();
+        const email = document.getElementById('enrollEmail') ? document.getElementById('enrollEmail').value.trim() : '';
         const photoFile = document.getElementById('enrollPhotoFile').files[0];
 
         try {
@@ -1038,6 +1168,7 @@ const App = {
                 formData.append('name', name);
                 formData.append('roll_number', roll);
                 formData.append('class_section', section);
+                formData.append('email', email);
                 formData.append('entity_type', 'student');
                 formData.append('file', photoFile);
 
@@ -1055,6 +1186,7 @@ const App = {
                         name: name,
                         roll_number: roll,
                         class_section: section,
+                        email: email,
                         photo_preview: faceData.photo_preview || ""
                     });
                 }
@@ -1076,7 +1208,8 @@ const App = {
                         student_id: studentId,
                         name: name,
                         roll_number: roll,
-                        class_section: section
+                        class_section: section,
+                        email: email
                     })
                 });
                 const data = await res.json();
@@ -1088,6 +1221,7 @@ const App = {
                         name: name,
                         roll_number: roll,
                         class_section: section,
+                        email: email,
                         photo_url: ""
                     });
                 }
@@ -1171,6 +1305,7 @@ const App = {
             const name = document.getElementById('enrollName').value.trim();
             const roll = document.getElementById('enrollRoll').value.trim();
             const section = document.getElementById('enrollSection').value.trim();
+            const email = document.getElementById('enrollEmail') ? document.getElementById('enrollEmail').value.trim() : '';
 
             if (!studentId || !name || !roll || !section) {
                 this.showToast("Please fill in Student Name, ID Number, Roll Number, and Class before snapping photo", "error");
@@ -1199,6 +1334,7 @@ const App = {
                     formData.append('name', name);
                     formData.append('roll_number', roll);
                     formData.append('class_section', section);
+                    formData.append('email', email);
                     formData.append('entity_type', 'student');
                     formData.append('file', blob, 'webcam_snap.jpg');
 
@@ -1216,6 +1352,7 @@ const App = {
                             name: name,
                             roll_number: roll,
                             class_section: section,
+                            email: email,
                             entity_type: 'student'
                         })
                     });
@@ -1246,6 +1383,7 @@ const App = {
                             name: name || data.name || studentId,
                             roll_number: roll,
                             class_section: section,
+                            email: email,
                             photo_preview: data.photo_preview || ""
                         });
                     }
@@ -1365,6 +1503,10 @@ const App = {
             const data = await res.json();
             const students = data.students || [];
 
+            this.cachedStudentsList = students;
+            this.renderLiveClassPresence();
+            this.updateEmailRecipientCount();
+
             if (countBadge) countBadge.textContent = students.length;
             if (!tbody) return;
 
@@ -1386,12 +1528,19 @@ const App = {
                     ? `<span style="display: inline-block; padding: 3px 8px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 700; font-size: 0.72rem; border: 1px solid rgba(16, 185, 129, 0.3);"><i class="fa-solid fa-check"></i> 128D ACTIVE</span>`
                     : `<span style="display: inline-block; padding: 3px 8px; border-radius: 12px; background: rgba(245, 158, 11, 0.15); color: #f59e0b; font-weight: 700; font-size: 0.72rem; border: 1px solid rgba(245, 158, 11, 0.3);">PENDING PHOTO</span>`;
 
+                const emailSnippet = s.email 
+                    ? `<div style="font-size: 0.72rem; color: #64748b; margin-top: 2px;"><i class="fa-solid fa-envelope"></i> ${s.email}</div>` 
+                    : '';
+
                 tr.innerHTML = `
                     <td>${photoHtml}</td>
                     <td><strong>${s.student_id}</strong></td>
-                    <td>${s.name}</td>
+                    <td>
+                        <div style="font-weight: 700; color: #1e293b;">${s.name}</div>
+                        ${emailSnippet}
+                    </td>
                     <td>${s.roll_number}</td>
-                    <td>${s.class_section}</td>
+                    <td><strong>${s.class_section}</strong></td>
                     <td>${statusBadge}</td>
                     <td>
                         <button class="btn-ctrl" onclick="App.deleteStudent('${s.student_id}', '${(s.name || s.student_id).replace(/'/g, "\\'")}')" style="padding: 4px 10px; font-size: 0.72rem; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">
@@ -1415,6 +1564,9 @@ const App = {
             const res = await fetch(this.getApiUrl('/api/enroll/teachers'));
             const data = await res.json();
             const teachers = data.teachers || [];
+
+            this.cachedTeachersList = teachers;
+            this.populateTeacherDropdownForRoutine();
 
             if (countBadge) countBadge.textContent = teachers.length;
             if (!tbody) return;
@@ -1589,6 +1741,549 @@ const App = {
                 statusBadge.style.color = "#10b981";
             }
         };
+    },
+
+    initClassFilters() {
+        const pills = document.querySelectorAll('.btn-class-pill');
+        pills.forEach(pill => {
+            pill.addEventListener('click', () => {
+                pills.forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                this.selectedClassFilter = pill.getAttribute('data-class') || 'ALL';
+                this.renderLiveClassPresence();
+                this.checkTimetableStatus();
+            });
+        });
+    },
+
+    renderLiveClassPresence() {
+        const grid = document.getElementById('liveStudentsPresenceGrid');
+        const presentCountEl = document.getElementById('classPresentCount');
+        const totalCountEl = document.getElementById('classTotalCount');
+        if (!grid) return;
+
+        const students = this.cachedStudentsList || [];
+        const filter = this.selectedClassFilter || 'ALL';
+
+        const filtered = filter === 'ALL'
+            ? students
+            : students.filter(s => (s.class_section || '').toUpperCase() === filter.toUpperCase());
+
+        const presentCount = filtered.filter(s => this.presentStudents.has(s.student_id)).length;
+        const totalCount = filtered.length;
+
+        if (presentCountEl) presentCountEl.textContent = presentCount;
+        if (totalCountEl) totalCountEl.textContent = totalCount;
+
+        if (filtered.length === 0) {
+            grid.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 30px; color: #94a3b8; background: #f8fafc; border-radius: 10px; border: 1px dashed #cbd5e1;">
+                    <i class="fa-solid fa-users-slash" style="font-size: 1.8rem; margin-bottom: 8px; color: #cbd5e1; display: block;"></i>
+                    <strong style="color: #64748b;">No students enrolled for ${filter === 'ALL' ? 'any class' : filter}</strong>
+                    <div style="font-size: 0.78rem; margin-top: 4px;">Enroll students in the Enrollment Studio to view live class presence.</div>
+                </div>
+            `;
+            return;
+        }
+
+        grid.innerHTML = '';
+        filtered.forEach(s => {
+            const isPresent = this.presentStudents.has(s.student_id);
+            const card = document.createElement('div');
+            card.className = `student-presence-card ${isPresent ? 'is-present' : 'is-absent'}`;
+            card.dataset.studentId = s.student_id;
+
+            const photoSrc = s.photo_path 
+                ? `${this.getApiUrl('/faces/' + s.photo_path.split('\\\\').pop().split('/').pop())}?t=${Date.now()}` 
+                : '';
+            const photoHtml = photoSrc
+                ? `<img src="${photoSrc}" style="width: 42px; height: 42px; border-radius: 10px; object-fit: cover; border: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.3)'};" onerror="this.outerHTML='<div class=\\'student-presence-avatar\\' style=\\'background: ${isPresent ? '#ecfdf5; color: #059669;' : '#fef2f2; color: #dc2626;'}\\'>${(s.name || 'S').charAt(0)}</div>'">`
+                : `<div class="student-presence-avatar" style="background: ${isPresent ? '#ecfdf5; color: #059669;' : '#fef2f2; color: #dc2626;'}">${(s.name || 'S').charAt(0)}</div>`;
+
+            const statusBadge = isPresent
+                ? `<span class="badge-status-present"><i class="fa-solid fa-circle-check"></i> PRESENT</span>`
+                : `<span class="badge-status-absent"><i class="fa-solid fa-circle-xmark"></i> ABSENT</span>`;
+
+            const emailHtml = s.email 
+                ? `<div style="font-size: 0.68rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; margin-top: 2px;" title="${s.email}"><i class="fa-solid fa-envelope"></i> ${s.email}</div>`
+                : '';
+
+            card.innerHTML = `
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
+                        ${photoHtml}
+                        <div style="overflow: hidden;">
+                            <h4 style="margin: 0; font-size: 0.88rem; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;" title="${s.name}">${s.name}</h4>
+                            <p style="margin: 2px 0 0 0; font-size: 0.74rem; color: #64748b;">${s.roll_number} • <strong style="color: #475569;">${s.class_section}</strong></p>
+                            ${emailHtml}
+                        </div>
+                    </div>
+                </div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)'};">
+                    <span style="font-size: 0.68rem; font-weight: 700; color: #94a3b8;">${s.student_id}</span>
+                    ${statusBadge}
+                </div>
+            `;
+            grid.appendChild(card);
+        });
+    },
+
+    initTimetableMonitor() {
+        this.checkTimetableStatus();
+        if (this.timetableMonitorInterval) clearInterval(this.timetableMonitorInterval);
+        this.timetableMonitorInterval = setInterval(() => this.checkTimetableStatus(), 10000);
+    },
+
+    async checkTimetableStatus() {
+        const targetClass = (this.selectedClassFilter && this.selectedClassFilter !== 'ALL')
+            ? this.selectedClassFilter
+            : 'CSE A';
+
+        try {
+            const res = await fetch(this.getApiUrl(`/api/timetable/status?class_name=${encodeURIComponent(targetClass)}`));
+            if (!res.ok) return;
+            const data = await res.json();
+            const status = data.status || {};
+
+            const card = document.getElementById('teacherPresenceCard');
+            const teacherNameEl = document.getElementById('activeTeacherName');
+            const timeSlotBadge = document.getElementById('activeTimeSlotBadge');
+            const subjectNameEl = document.getElementById('activeSubjectName');
+            const roomNameEl = document.getElementById('activeRoomName');
+            const badgeContainer = document.getElementById('teacherPresenceBadgeContainer');
+
+            if (!card) return;
+
+            if (status.has_active_slot) {
+                if (teacherNameEl) teacherNameEl.textContent = status.teacher_name || 'Scheduled Faculty';
+                if (timeSlotBadge) timeSlotBadge.textContent = `${status.start_time} - ${status.end_time}`;
+                if (subjectNameEl) subjectNameEl.textContent = `${status.subject} (${status.class_name})`;
+                if (roomNameEl) roomNameEl.textContent = status.room_number || 'Room 101';
+
+                if (status.teacher_present) {
+                    card.classList.remove('alert-teacher-late');
+                    card.style.background = '#f0fdf4';
+                    card.style.borderColor = '#86efac';
+                    if (badgeContainer) {
+                        badgeContainer.innerHTML = `
+                            <span class="badge-status-present" style="font-size: 0.82rem; padding: 6px 14px;">
+                                <i class="fa-solid fa-chalkboard-user"></i> TEACHER PRESENT
+                            </span>
+                        `;
+                    }
+                } else {
+                    if (status.is_late_alert) {
+                        // >= 5 minutes late! Class blinks yellow showing teacher absent
+                        card.classList.add('alert-teacher-late');
+                        if (badgeContainer) {
+                            badgeContainer.innerHTML = `
+                                <span class="badge-status-warning" style="font-size: 0.82rem; padding: 6px 14px;">
+                                    <i class="fa-solid fa-triangle-exclamation fa-beat"></i> TEACHER ABSENT (>5 MINS)
+                                </span>
+                            `;
+                        }
+                    } else {
+                        // Absent but within 5-minute grace period
+                        card.classList.remove('alert-teacher-late');
+                        card.style.background = '#fef2f2';
+                        card.style.borderColor = '#fca5a5';
+                        const minsLeft = 5 - (status.elapsed_minutes || 0);
+                        if (badgeContainer) {
+                            badgeContainer.innerHTML = `
+                                <span class="badge-status-absent" style="font-size: 0.82rem; padding: 6px 14px;">
+                                    <i class="fa-solid fa-clock"></i> TEACHER PENDING (${minsLeft}m GRACE)
+                                </span>
+                            `;
+                        }
+                    }
+                }
+            } else {
+                // No active slot currently scheduled
+                card.classList.remove('alert-teacher-late');
+                card.style.background = '#f8fafc';
+                card.style.borderColor = 'var(--border-color)';
+                if (teacherNameEl) teacherNameEl.textContent = `No Active Lecture (${targetClass})`;
+                if (timeSlotBadge) timeSlotBadge.textContent = 'Standby Slot';
+                if (subjectNameEl) subjectNameEl.textContent = 'No scheduled lecture period at this time';
+                if (roomNameEl) roomNameEl.textContent = 'N/A';
+                if (badgeContainer) {
+                    badgeContainer.innerHTML = `
+                        <span class="badge-status-absent" style="font-size: 0.82rem; padding: 6px 14px; opacity: 0.6; background: #e2e8f0; color: #475569; border-color: #cbd5e1;">
+                            <i class="fa-solid fa-circle-info"></i> NO ACTIVE PERIOD
+                        </span>
+                    `;
+                }
+            }
+        } catch (e) {
+            console.warn("Could not check timetable status:", e);
+        }
+    },
+
+    async fetchTimetableRoutines() {
+        try {
+            const res = await fetch(this.getApiUrl('/api/timetable/routines'));
+            if (!res.ok) throw new Error("Failed to load routines");
+            const data = await res.json();
+            this.timetableRoutines = data.routines || [];
+            this.renderTimetableRoutines();
+        } catch (e) {
+            console.error("Error fetching timetable routines:", e);
+            const tbody = document.getElementById('routineTableBody');
+            if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444; padding: 16px;">Failed to load timetable routine.</td></tr>';
+        }
+    },
+
+    renderTimetableRoutines() {
+        const tbody = document.getElementById('routineTableBody');
+        if (!tbody) return;
+
+        const dayFilter = document.getElementById('filterRoutineDay') ? document.getElementById('filterRoutineDay').value : '';
+        const classFilter = document.getElementById('filterRoutineClass') ? document.getElementById('filterRoutineClass').value : '';
+
+        let filtered = this.timetableRoutines || [];
+        if (dayFilter) {
+            filtered = filtered.filter(r => (r.day_of_week || '').toLowerCase() === dayFilter.toLowerCase());
+        }
+        if (classFilter) {
+            filtered = filtered.filter(r => (r.class_name || '').toUpperCase() === classFilter.toUpperCase());
+        }
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 24px;">No routine periods found. Add a period or upload CSV above.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = '';
+        filtered.forEach(r => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${r.day_of_week}</strong></td>
+                <td><span class="badge" style="font-size: 0.72rem; background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;">${r.start_time} - ${r.end_time}</span></td>
+                <td><span style="font-weight: 700; color: var(--accent-indigo);">${r.class_name}</span></td>
+                <td><strong>${r.subject}</strong></td>
+                <td>${r.teacher_name || r.teacher_id || 'Unassigned'}</td>
+                <td>${r.room_number || 'Room 101'}</td>
+                <td>
+                    <button class="btn-ctrl" onclick="App.deleteRoutine(${r.id})" style="padding: 4px 10px; font-size: 0.72rem; color: #ef4444; border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.08);">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    },
+
+    async handleRoutineSubmit(e) {
+        e.preventDefault();
+        const className = document.getElementById('routineClass').value;
+        const day = document.getElementById('routineDay').value;
+        const start = document.getElementById('routineStart').value;
+        const end = document.getElementById('routineEnd').value;
+        const subject = document.getElementById('routineSubject').value.trim();
+        const teacherSelect = document.getElementById('routineTeacherSelect');
+        const teacherId = teacherSelect.value;
+        const teacherName = teacherSelect.options[teacherSelect.selectedIndex]?.dataset.name || teacherId;
+        const room = document.getElementById('routineRoom').value.trim() || 'Room 101';
+
+        if (!className || !day || !start || !end || !subject || !teacherId) {
+            this.showToast("Please fill in all required routine fields", "error");
+            return;
+        }
+
+        try {
+            const res = await fetch(this.getApiUrl('/api/timetable/routine'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    class_name: className,
+                    day_of_week: day,
+                    start_time: start,
+                    end_time: end,
+                    subject: subject,
+                    teacher_id: teacherId,
+                    teacher_name: teacherName,
+                    room_number: room
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Failed to add routine period");
+
+            this.showToast(`Added ${subject} for ${className} (${day})`, "success");
+            document.getElementById('timetableForm').reset();
+            document.getElementById('routineClass').value = className;
+            document.getElementById('routineDay').value = day;
+            this.fetchTimetableRoutines();
+            this.checkTimetableStatus();
+        } catch (err) {
+            this.showToast("Routine error: " + err.message, "error");
+        }
+    },
+
+    async handleRoutineUpload(file) {
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('file', file);
+
+        this.showToast(`Uploading ${file.name}...`, "info");
+
+        try {
+            const res = await fetch(this.getApiUrl('/api/timetable/upload'), {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Failed to upload timetable routine");
+
+            const count = data.imported_count !== undefined ? data.imported_count : (data.count !== undefined ? data.count : 0);
+            this.showToast(`Imported ${count} periods from ${file.name}!`, "success");
+            this.fetchTimetableRoutines();
+            this.checkTimetableStatus();
+        } catch (e) {
+            this.showToast("Upload failed: " + e.message, "error");
+        }
+    },
+
+    async deleteRoutine(routineId) {
+        if (!confirm("Are you sure you want to delete this scheduled routine period?")) return;
+
+        try {
+            const res = await fetch(this.getApiUrl(`/api/timetable/routine/${routineId}`), {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Failed to delete routine");
+
+            this.showToast("Deleted routine period", "info");
+            this.fetchTimetableRoutines();
+            this.checkTimetableStatus();
+        } catch (e) {
+            this.showToast("Delete error: " + e.message, "error");
+        }
+    },
+
+    async clearAllTimetableRoutines() {
+        if (!confirm("Are you sure you want to clear the ENTIRE timetable routine schedule?")) return;
+
+        try {
+            const res = await fetch(this.getApiUrl('/api/timetable/routines/all'), {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || "Failed to clear routines");
+
+            this.showToast("All timetable routines cleared", "info");
+            this.fetchTimetableRoutines();
+            this.checkTimetableStatus();
+        } catch (e) {
+            this.showToast("Clear error: " + e.message, "error");
+        }
+    },
+
+    downloadSampleCsv() {
+        const sampleCsv = `class_name,day_of_week,start_time,end_time,subject,teacher_name,teacher_id,room_number
+CSE A,Monday,09:00,10:00,Operating Systems,Prof. Alan Turing,FAC-CSE-01,Room 101
+CSE A,Monday,10:00,11:00,Database Systems,Prof. Ada Lovelace,FAC-CSE-02,Room 102
+CSE B,Monday,09:00,10:00,Data Structures,Prof. Alan Turing,FAC-CSE-01,Room 103
+CSE AIML,Monday,11:00,12:00,Machine Learning,Prof. Geoffrey Hinton,FAC-AIML-01,Lab 1
+CE,Monday,09:00,10:00,Structural Analysis,Prof. John Smeaton,FAC-CE-01,Hall A
+ME,Monday,10:00,11:00,Thermodynamics,Prof. James Watt,FAC-ME-01,Room 201
+ECE,Monday,09:00,10:00,Signals & Systems,Prof. Claude Shannon,FAC-ECE-01,Room 301
+CSE A,Tuesday,09:00,10:00,Computer Networks,Prof. Alan Turing,FAC-CSE-01,Room 101`;
+
+        const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'timetable_routine_sample.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        this.showToast("Downloaded sample timetable CSV template", "success");
+    },
+
+    populateTeacherDropdownForRoutine() {
+        const sel = document.getElementById('routineTeacherSelect');
+        if (!sel) return;
+
+        const teachers = this.cachedTeachersList || [];
+        sel.innerHTML = '<option value="" disabled selected>Select Teacher</option>';
+
+        if (teachers.length === 0) {
+            sel.innerHTML += '<option value="FAC-01" data-name="Faculty Member">Faculty Member (FAC-01)</option>';
+            return;
+        }
+
+        teachers.forEach(t => {
+            const opt = document.createElement('option');
+            opt.value = t.teacher_id;
+            opt.dataset.name = t.name;
+            opt.textContent = `${t.name} (${t.teacher_id} - ${t.department || 'Dept'})`;
+            sel.appendChild(opt);
+        });
+    },
+
+    initEmailJS() {
+        const saved = localStorage.getItem('attendance_emailjs_config');
+        if (saved) {
+            try {
+                this.emailjsConfig = JSON.parse(saved);
+                const sEl = document.getElementById('emailjsServiceId');
+                const tEl = document.getElementById('emailjsTemplateId');
+                const pEl = document.getElementById('emailjsPublicKey');
+                if (sEl && this.emailjsConfig.serviceId) sEl.value = this.emailjsConfig.serviceId;
+                if (tEl && this.emailjsConfig.templateId) tEl.value = this.emailjsConfig.templateId;
+                if (pEl && this.emailjsConfig.publicKey) pEl.value = this.emailjsConfig.publicKey;
+
+                if (window.emailjs && this.emailjsConfig.publicKey) {
+                    window.emailjs.init(this.emailjsConfig.publicKey);
+                    console.log("EmailJS initialized with public key.");
+                }
+            } catch (e) {
+                console.warn("Could not parse saved EmailJS config:", e);
+            }
+        }
+    },
+
+    saveEmailjsConfig() {
+        const sEl = document.getElementById('emailjsServiceId');
+        const tEl = document.getElementById('emailjsTemplateId');
+        const pEl = document.getElementById('emailjsPublicKey');
+
+        const serviceId = sEl ? sEl.value.trim() : '';
+        const templateId = tEl ? tEl.value.trim() : '';
+        const publicKey = pEl ? pEl.value.trim() : '';
+
+        this.emailjsConfig = { serviceId, templateId, publicKey };
+        localStorage.setItem('attendance_emailjs_config', JSON.stringify(this.emailjsConfig));
+
+        if (window.emailjs && publicKey) {
+            window.emailjs.init(publicKey);
+        }
+
+        this.showToast("EmailJS configuration saved successfully!", "success");
+    },
+
+    updateEmailRecipientCount() {
+        const countEl = document.getElementById('emailRecipientCount');
+        if (!countEl) return;
+        const students = this.cachedStudentsList || [];
+        const withEmail = students.filter(s => s.email && s.email.includes('@'));
+        countEl.textContent = `${withEmail.length} Students (of ${students.length} Total)`;
+    },
+
+    previewDailyEmailSummary() {
+        const box = document.getElementById('emailDispatchProgressBox');
+        if (!box) return;
+
+        const students = this.cachedStudentsList || [];
+        const sampleStudent = students.find(s => s.email && s.email.includes('@')) || {
+            name: "John Doe",
+            student_id: "STU-2026-001",
+            roll_number: "CS-101",
+            class_section: "CSE A",
+            email: "student@campus.edu"
+        };
+
+        const isPresent = this.presentStudents.has(sampleStudent.student_id);
+        const todayDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+        box.style.display = 'block';
+        box.innerHTML = `
+            <strong>Preview Email for: ${sampleStudent.name} &lt;${sampleStudent.email}&gt;</strong><br>
+            --------------------------------------------------------<br>
+            Subject: Daily Attendance Summary - ${todayDate}<br>
+            Dear ${sampleStudent.name},<br>
+            Your lecture attendance status for ${todayDate} (${sampleStudent.class_section}) is:<br>
+            Status: ${isPresent ? '🟢 PRESENT' : '🔴 ABSENT'}<br>
+            Roll Number: ${sampleStudent.roll_number} | ID: ${sampleStudent.student_id}<br>
+            Daily Verification: Face Recognition Edge Pipeline Verified.<br>
+            --------------------------------------------------------
+        `;
+        this.showToast("Preview generated below", "info");
+    },
+
+    async dispatchDailyAttendanceEmails() {
+        const { serviceId, templateId, publicKey } = this.emailjsConfig;
+        if (!serviceId || !templateId || !publicKey) {
+            this.showToast("Please fill and save Service ID, Template ID, and Public Key first", "error");
+            return;
+        }
+
+        const students = this.cachedStudentsList || [];
+        const targets = students.filter(s => s.email && s.email.includes('@'));
+
+        if (targets.length === 0) {
+            this.showToast("No students have registered email addresses to send summaries to", "error");
+            return;
+        }
+
+        const box = document.getElementById('emailDispatchProgressBox');
+        const btn = document.getElementById('btnDispatchDailyEmails');
+        if (box) {
+            box.style.display = 'block';
+            box.innerHTML = `Starting dispatch to ${targets.length} student(s)...<br>`;
+        }
+        if (btn) btn.disabled = true;
+
+        if (window.emailjs) {
+            window.emailjs.init(publicKey);
+        }
+
+        const todayDate = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+        let sentCount = 0;
+        let failCount = 0;
+
+        for (const s of targets) {
+            const isPresent = this.presentStudents.has(s.student_id);
+            const templateParams = {
+                to_email: s.email,
+                to_name: s.name,
+                student_id: s.student_id,
+                roll_number: s.roll_number,
+                class_section: s.class_section,
+                date: todayDate,
+                attendance_status: isPresent ? 'PRESENT' : 'ABSENT',
+                summary_details: `Daily attendance for ${todayDate}: Student was marked ${isPresent ? 'PRESENT (Verified)' : 'ABSENT'}.`,
+                college_name: "Institute of Engineering & Technology"
+            };
+
+            try {
+                if (window.emailjs) {
+                    await window.emailjs.send(serviceId, templateId, templateParams);
+                } else {
+                    throw new Error("EmailJS SDK not loaded");
+                }
+                sentCount++;
+                if (box) box.innerHTML += `✅ Sent summary to ${s.name} (${s.email})<br>`;
+            } catch (err) {
+                failCount++;
+                if (box) box.innerHTML += `❌ Failed for ${s.name} (${s.email}): ${err.text || err.message}<br>`;
+            }
+        }
+
+        if (btn) btn.disabled = false;
+        this.showToast(`Daily emails sent: ${sentCount} succeeded, ${failCount} failed`, sentCount > 0 ? "success" : "error");
+    },
+
+    async fetchTodayAttendance() {
+        try {
+            const res = await fetch(this.getApiUrl('/api/attendance/records?limit=100'));
+            if (res.ok) {
+                const data = await res.json();
+                if (data.records && Array.isArray(data.records)) {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    data.records.forEach(r => {
+                        if (r.entry_time && r.entry_time.startsWith(todayStr)) {
+                            this.presentStudents.add(r.student_id);
+                        }
+                    });
+                    this.renderLiveClassPresence();
+                }
+            }
+        } catch (e) {
+            console.warn("Could not pre-fetch today's attendance records:", e);
+        }
     },
 
     showToast(message, type = "info") {

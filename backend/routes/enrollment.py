@@ -23,6 +23,7 @@ class RegisterStudentRequest(BaseModel):
     name: str
     roll_number: str
     class_section: str
+    email: Optional[str] = None
 
 class RegisterTeacherRequest(BaseModel):
     teacher_id: str
@@ -62,7 +63,8 @@ def register_student(req: RegisterStudentRequest):
         student_id=req.student_id,
         name=req.name,
         roll_number=req.roll_number,
-        class_section=req.class_section
+        class_section=req.class_section,
+        email=req.email
     )
     if not success:
         raise HTTPException(status_code=500, detail="Failed to register student")
@@ -79,11 +81,14 @@ def register_teacher(req: RegisterTeacherRequest):
         teacher_id=req.teacher_id,
         name=req.name,
         department=req.department,
-        fingerprint_id=req.fingerprint_id or 1
+        fingerprint_id=req.fingerprint_id
     )
 
-    # Enroll in sensor if hardware present
-    enroll_success, enroll_msg = fp_mgr.enroll_teacher_fingerprint(req.teacher_id, req.fingerprint_id or 1)
+    # Enroll in sensor if hardware present and slot is provided
+    enroll_msg = "Software bypass mode (No physical sensor required)"
+    if req.fingerprint_id is not None:
+        enroll_success, enroll_msg = fp_mgr.enroll_teacher_fingerprint(req.teacher_id, req.fingerprint_id)
+
     return {
         "success": True,
         "message": f"Faculty {req.name} registered successfully",
@@ -111,6 +116,7 @@ async def enroll_face_from_upload(
     roll_number: Optional[str] = Form(None),
     class_section: Optional[str] = Form(None),
     department: Optional[str] = Form(None),
+    email: Optional[str] = Form(None),
     file: UploadFile = File(...)
 ):
     """Enrolls face for either a student or teacher from an uploaded photo (JPG/PNG)."""
@@ -146,11 +152,12 @@ async def enroll_face_from_upload(
         sname = name or f"Student {sid}"
         sroll = roll_number or sid
         ssec = class_section or "CSE A"
+        semail = email or None
         photo_filename = f"{sid}_{int(time.time())}.jpg"
         photo_path = os.path.join(faces_dir, photo_filename)
         cv2.imwrite(photo_path, img_bgr)
 
-        db.register_student(student_id=sid, name=sname, roll_number=sroll, class_section=ssec, photo_path=photo_path)
+        db.register_student(student_id=sid, name=sname, roll_number=sroll, class_section=ssec, photo_path=photo_path, email=semail)
         success, msg = face_eng.enroll_face_image(sid, img_bgr)
         identifier = sid
         display_name = sname
@@ -203,12 +210,13 @@ def snap_and_enroll(payload: Dict[str, Any]):
         sname = payload.get("name") or f"Student {sid}"
         sroll = payload.get("roll_number") or sid
         ssec = payload.get("class_section") or "CSE A"
+        semail = payload.get("email") or None
 
         photo_filename = f"{sid}_{int(time.time())}.jpg"
         photo_path = os.path.join(faces_dir, photo_filename)
         cv2.imwrite(photo_path, frame)
 
-        db.register_student(student_id=sid, name=sname, roll_number=sroll, class_section=ssec, photo_path=photo_path)
+        db.register_student(student_id=sid, name=sname, roll_number=sroll, class_section=ssec, photo_path=photo_path, email=semail)
         success, msg = face_eng.enroll_face_image(sid, frame)
         identifier = sid
         display_name = sname

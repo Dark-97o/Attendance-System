@@ -292,6 +292,83 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- ==========================================================================
+                         CLASS-WISE LIVE PRESENCE & TIMETABLE ROUTINE MONITOR
+                         ========================================================================== -->
+                    <div style="margin-top: 24px;">
+                        <div class="feed-card" style="padding: 22px;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
+                                <div>
+                                    <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                                        <i class="fa-solid fa-users-viewfinder" style="color: var(--accent-indigo);"></i>
+                                        <span>Class-Wise Live Presence & Routine Monitor</span>
+                                    </h3>
+                                    <p style="margin: 4px 0 0 0; font-size: 0.78rem; color: var(--text-muted);">
+                                        Live student presence tracking (🟢 Present / 🔴 Absent) and timetable faculty status with 5-minute late alert.
+                                    </p>
+                                </div>
+                                
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <button type="button" class="btn-ctrl" id="btnOpenEmailModal" style="padding: 8px 14px; font-size: 0.8rem; font-weight: 700; background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.08)); border: 1px solid rgba(79, 70, 229, 0.3); color: var(--accent-indigo);">
+                                        <i class="fa-solid fa-envelope-circle-check"></i> Send Daily Summary Emails
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Class Selection Filter Tabs -->
+                            <div class="class-filter-bar">
+                                <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-right: 4px;"><i class="fa-solid fa-filter"></i> Select Class:</span>
+                                <button type="button" class="btn-class-pill active" data-class="ALL" id="btnClassALL"><i class="fa-solid fa-layer-group"></i> All Classes</button>
+                                <button type="button" class="btn-class-pill" data-class="CSE A" id="btnClassCSE_A">CSE A</button>
+                                <button type="button" class="btn-class-pill" data-class="CSE B" id="btnClassCSE_B">CSE B</button>
+                                <button type="button" class="btn-class-pill" data-class="CSE AIML" id="btnClassCSE_AIML">CSE AIML</button>
+                                <button type="button" class="btn-class-pill" data-class="CE" id="btnClassCE">CE</button>
+                                <button type="button" class="btn-class-pill" data-class="ME" id="btnClassME">ME</button>
+                                <button type="button" class="btn-class-pill" data-class="ECE" id="btnClassECE">ECE</button>
+                            </div>
+
+                            <!-- Active Lecture & Scheduled Teacher Presence Card (Blinks Yellow if Teacher is >5 mins late) -->
+                            <div class="teacher-presence-card" id="teacherPresenceCard">
+                                <div style="display: flex; align-items: center; gap: 14px;">
+                                    <div id="teacherAvatarBox" style="width: 46px; height: 46px; border-radius: 12px; background: #e0e7ff; color: var(--accent-indigo); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; border: 1px solid #c7d2fe;">
+                                        <i class="fa-solid fa-chalkboard-user"></i>
+                                    </div>
+                                    <div>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: #0f172a;" id="activeTeacherName">Scheduled Faculty</h4>
+                                            <span class="badge" style="font-size: 0.7rem; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;" id="activeTimeSlotBadge">No Active Slot</span>
+                                        </div>
+                                        <p style="margin: 3px 0 0 0; font-size: 0.78rem; color: var(--text-muted);" id="activeSubjectDesc">
+                                            Lecture Subject: <strong id="activeSubjectName">Standby / Unscheduled</strong> | Room: <span id="activeRoomName">Room 101</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                
+                                <div id="teacherPresenceBadgeContainer">
+                                    <span class="badge-status-absent" id="teacherPresenceBadge" style="font-size: 0.82rem; padding: 6px 14px;">
+                                        <i class="fa-solid fa-clock"></i> TEACHER NOT PRESENT
+                                    </span>
+                                </div>
+                            </div>
+
+                            <!-- Live Enrolled Students Presence Grid -->
+                            <div>
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <h4 style="margin: 0; font-size: 0.92rem; font-weight: 700; color: #334155;">
+                                        <i class="fa-solid fa-user-check"></i> Class Student Roster Presence:
+                                    </h4>
+                                    <div style="font-size: 0.8rem; font-weight: 700; color: #64748b;">
+                                        Present: <span style="color: #10b981; font-weight: 800;" id="classPresentCount">0</span> / Enrolled: <span id="classTotalCount" style="font-weight: 800;">0</span>
+                                    </div>
+                                </div>
+
+                                <div class="live-student-grid" id="liveStudentsPresenceGrid">
+                                    <div style="text-align: center; color: #94a3b8; grid-column: 1 / -1; padding: 24px;">Loading class roster presence...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- ==========================================================================
@@ -369,10 +446,13 @@
                                     <button type="button" class="btn-enroll-mode" id="btnModeTeacher" data-mode="teacher">
                                         <i class="fa-solid fa-chalkboard-user"></i> Faculty / Teacher Registration
                                     </button>
+                                    <button type="button" class="btn-enroll-mode" id="btnModeTimetable" data-mode="timetable">
+                                        <i class="fa-solid fa-calendar-days"></i> Routine / Timetable
+                                    </button>
                                 </div>
                             </div>
                             
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
+                            <div id="enrollCameraAndFormsRow" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
                                 <!-- Left Column: Camera Controls & Live Optical Capture -->
                                 <div>
                                     <!-- Desired Camera Switcher Toolbar -->
@@ -460,6 +540,11 @@
                                         </div>
 
                                         <div class="form-group">
+                                            <label for="enrollEmail">Student Institutional Email *</label>
+                                            <input type="email" id="enrollEmail" class="form-control" placeholder="e.g. student@campus.edu" required>
+                                        </div>
+
+                                        <div class="form-group">
                                             <label for="enrollPhotoFile">Or Upload Face Image File</label>
                                             <input type="file" id="enrollPhotoFile" class="form-control" accept="image/*">
                                         </div>
@@ -513,6 +598,156 @@
                                             <i class="fa-solid fa-user-check"></i> Save Faculty Details & Register
                                         </button>
                                     </form>
+                                </div>
+                            </div>
+
+                            <!-- 3. Timetable Routine Manager Box (Visible when Timetable mode is selected) -->
+                            <div id="timetableManagerBox" style="display: none; margin-top: 10px;">
+                                <div style="display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 24px; align-items: start;">
+                                    <!-- Left Column: Add Schedule Form -->
+                                    <div style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 18px;">
+                                        <h4 style="margin: 0 0 12px 0; font-size: 0.95rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                                            <i class="fa-solid fa-calendar-plus" style="color: var(--accent-indigo);"></i> Add Timetable Period
+                                        </h4>
+                                        <form id="timetableForm">
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                                <div class="form-group">
+                                                    <label for="routineClass">Class / Department *</label>
+                                                    <select id="routineClass" class="form-control" required style="font-weight: 600;">
+                                                        <option value="CSE A" selected>CSE A</option>
+                                                        <option value="CSE B">CSE B</option>
+                                                        <option value="CSE AIML">CSE AIML</option>
+                                                        <option value="CE">CE</option>
+                                                        <option value="ME">ME</option>
+                                                        <option value="ECE">ECE</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="routineDay">Day of Week *</label>
+                                                    <select id="routineDay" class="form-control" required style="font-weight: 600;">
+                                                        <option value="Monday" selected>Monday</option>
+                                                        <option value="Tuesday">Tuesday</option>
+                                                        <option value="Wednesday">Wednesday</option>
+                                                        <option value="Thursday">Thursday</option>
+                                                        <option value="Friday">Friday</option>
+                                                        <option value="Saturday">Saturday</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                                <div class="form-group">
+                                                    <label for="routineStart">Start Time *</label>
+                                                    <input type="time" id="routineStart" class="form-control" value="09:00" required>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="routineEnd">End Time *</label>
+                                                    <input type="time" id="routineEnd" class="form-control" value="10:00" required>
+                                                </div>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label for="routineSubject">Course / Subject Name *</label>
+                                                <input type="text" id="routineSubject" class="form-control" placeholder="e.g. Operating Systems" required>
+                                            </div>
+
+                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                                <div class="form-group">
+                                                    <label for="routineTeacherSelect">Assigned Faculty *</label>
+                                                    <select id="routineTeacherSelect" class="form-control" required style="font-weight: 600;">
+                                                        <option value="" disabled selected>Select Teacher</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label for="routineRoom">Room / Hall</label>
+                                                    <input type="text" id="routineRoom" class="form-control" value="Room 101">
+                                                </div>
+                                            </div>
+
+                                            <button type="submit" class="btn-submit" id="btnSubmitRoutine" style="width: 100%; font-size: 0.88rem; padding: 11px; font-weight: 700;">
+                                                <i class="fa-solid fa-plus"></i> Save Period to Timetable
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    <!-- Right Column: CSV Upload & Template Download -->
+                                    <div>
+                                        <div style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 18px; margin-bottom: 16px;">
+                                            <h4 style="margin: 0 0 10px 0; font-size: 0.95rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                                                <i class="fa-solid fa-file-csv" style="color: #059669;"></i> Upload Timetable Routine (CSV / JSON)
+                                            </h4>
+                                            <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 12px 0;">
+                                                Upload your schedule covering Monday through Saturday.
+                                            </p>
+
+                                            <div class="routine-upload-box" id="routineDropZone">
+                                                <i class="fa-solid fa-cloud-arrow-up" style="font-size: 1.8rem; color: var(--accent-indigo); margin-bottom: 8px;"></i>
+                                                <div style="font-weight: 700; font-size: 0.85rem; color: #1e293b;">Click to Choose Routine CSV/JSON</div>
+                                                <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 4px;">Supports standard CSV with class, day, start, end, subject</div>
+                                                <input type="file" id="routineFileInput" accept=".csv,.json" style="display: none;">
+                                            </div>
+
+                                            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px;">
+                                                <button type="button" class="btn-ctrl" id="btnDownloadSampleCsv" style="font-size: 0.76rem; padding: 6px 12px;">
+                                                    <i class="fa-solid fa-download"></i> Sample CSV Template
+                                                </button>
+                                                <button type="button" class="btn-ctrl" id="btnClearAllRoutines" style="font-size: 0.76rem; padding: 6px 12px; color: #ef4444; border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.08);">
+                                                    <i class="fa-solid fa-trash-can"></i> Clear Timetable
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Timetable Grid / Schedule List -->
+                                <div style="margin-top: 20px; background: #ffffff; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 18px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px;">
+                                        <h4 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: #0f172a;">
+                                            <i class="fa-solid fa-list-check" style="color: var(--accent-indigo);"></i> Scheduled Routine Master List
+                                        </h4>
+                                        <div style="display: flex; gap: 8px;">
+                                            <select id="filterRoutineDay" class="form-control" style="font-size: 0.78rem; padding: 4px 8px; width: auto;">
+                                                <option value="">All Days (Mon-Sat)</option>
+                                                <option value="Monday">Monday</option>
+                                                <option value="Tuesday">Tuesday</option>
+                                                <option value="Wednesday">Wednesday</option>
+                                                <option value="Thursday">Thursday</option>
+                                                <option value="Friday">Friday</option>
+                                                <option value="Saturday">Saturday</option>
+                                            </select>
+                                            <select id="filterRoutineClass" class="form-control" style="font-size: 0.78rem; padding: 4px 8px; width: auto;">
+                                                <option value="">All Classes</option>
+                                                <option value="CSE A">CSE A</option>
+                                                <option value="CSE B">CSE B</option>
+                                                <option value="CSE AIML">CSE AIML</option>
+                                                <option value="CE">CE</option>
+                                                <option value="ME">ME</option>
+                                                <option value="ECE">ECE</option>
+                                            </select>
+                                            <button type="button" class="btn-ctrl" id="btnRefreshTimetable" style="padding: 4px 10px; font-size: 0.76rem;">
+                                                <i class="fa-solid fa-arrows-rotate"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div class="table-responsive">
+                                        <table class="data-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Day</th>
+                                                    <th>Time Slot</th>
+                                                    <th>Class</th>
+                                                    <th>Course / Subject</th>
+                                                    <th>Assigned Faculty</th>
+                                                    <th>Room</th>
+                                                    <th>Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="routineTableBody">
+                                                <tr><td colspan="7" style="text-align: center; color: #94a3b8;">Loading timetable routine...</td></tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -579,9 +814,72 @@
             </main>
         </div>
 
+        <!-- EmailJS Daily Attendance Summary Modal -->
+        <div class="modal-overlay" id="emailModal" style="display: none;">
+            <div class="modal-content-card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                        <i class="fa-solid fa-envelope-circle-check" style="color: var(--accent-indigo);"></i>
+                        <span>EmailJS Daily Summary Dispatcher</span>
+                    </h3>
+                    <button type="button" id="btnCloseEmailModal" style="background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #94a3b8;">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+
+                <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0 0 16px 0; line-height: 1.5;">
+                    Send each student a personalized end-of-day email containing their daily lecture attendance summary across all periods.
+                </p>
+
+                <div style="background: #f8fafc; border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 16px;">
+                    <div style="font-weight: 700; font-size: 0.82rem; color: #334155; margin-bottom: 8px;">
+                        <i class="fa-solid fa-sliders" style="color: var(--accent-indigo);"></i> EmailJS Credentials Configuration:
+                    </div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+                        <div class="form-group" style="margin: 0;">
+                            <label for="emailjsServiceId" style="font-size: 0.72rem;">Service ID</label>
+                            <input type="text" id="emailjsServiceId" class="form-control" placeholder="e.g. service_attendance" style="font-size: 0.8rem; padding: 6px 10px;">
+                        </div>
+                        <div class="form-group" style="margin: 0;">
+                            <label for="emailjsTemplateId" style="font-size: 0.72rem;">Template ID</label>
+                            <input type="text" id="emailjsTemplateId" class="form-control" placeholder="e.g. template_daily_summary" style="font-size: 0.8rem; padding: 6px 10px;">
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin: 0 0 10px 0;">
+                        <label for="emailjsPublicKey" style="font-size: 0.72rem;">Public Key (User ID)</label>
+                        <input type="text" id="emailjsPublicKey" class="form-control" placeholder="e.g. user_xxxxxxxxxxxx" style="font-size: 0.8rem; padding: 6px 10px;">
+                    </div>
+                    <button type="button" class="btn-ctrl" id="btnSaveEmailjsConfig" style="width: 100%; font-size: 0.78rem; padding: 7px;">
+                        <i class="fa-solid fa-floppy-disk"></i> Save EmailJS Keys to Browser
+                    </button>
+                </div>
+
+                <!-- Dispatch Action & Status Log -->
+                <div style="margin-bottom: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                        <span style="font-size: 0.8rem; font-weight: 700; color: #475569;">Target Students with Registered Email:</span>
+                        <span id="emailRecipientCount" style="font-size: 0.8rem; font-weight: 800; color: var(--accent-indigo);">0 Students</span>
+                    </div>
+                    <div id="emailDispatchProgressBox" style="display: none; background: #f1f5f9; padding: 10px; border-radius: 6px; font-size: 0.78rem; max-height: 120px; overflow-y: auto; margin-bottom: 12px; font-family: monospace;"></div>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button type="button" class="btn-submit" id="btnDispatchDailyEmails" style="flex: 2; margin: 0; padding: 12px; font-weight: 700; font-size: 0.9rem; background: linear-gradient(135deg, #4f46e5, #0284c7);">
+                        <i class="fa-solid fa-paper-plane"></i> Dispatch Daily Attendance Summaries
+                    </button>
+                    <button type="button" class="btn-ctrl" id="btnTestEmailPreview" style="flex: 1; font-size: 0.8rem;">
+                        <i class="fa-solid fa-eye"></i> Preview
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <!-- Toast Notifications Container -->
         <div class="toast-container" id="toastContainer"></div>
     </div>
+
+    <!-- EmailJS SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
 
     <!-- Application Script & Firebase Integration -->
     <script type="module" src="./js/firebase.js?v=5.0"></script>

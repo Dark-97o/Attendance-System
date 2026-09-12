@@ -26,7 +26,7 @@ from engine.camera import CameraStream
 from engine.face_engine import FaceEngine
 from engine.attendance_manager import AttendanceManager
 from backend.routes import (
-    session_router, attendance_router, enrollment_router, diagnostics_router, init_all_routes
+    session_router, attendance_router, enrollment_router, diagnostics_router, timetable_router, init_all_routes
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -169,6 +169,7 @@ app.include_router(session_router)
 app.include_router(attendance_router)
 app.include_router(enrollment_router)
 app.include_router(diagnostics_router)
+app.include_router(timetable_router)
 
 # Video Streaming Endpoint (MJPEG)
 def generate_mjpeg_frames():

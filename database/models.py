@@ -66,13 +66,14 @@ class DatabaseManager:
     # --- STUDENT & BIOMETRIC OPERATIONS ---
 
     def register_student(self, student_id: str, name: str, roll_number: str,
-                         class_section: str, photo_path: Optional[str] = None) -> bool:
+                         class_section: str, photo_path: Optional[str] = None,
+                         email: Optional[str] = None) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO students (student_id, name, roll_number, class_section, photo_path)
-                VALUES (?, ?, ?, ?, ?)
-            """, (student_id, name, roll_number, class_section, photo_path))
+                INSERT OR REPLACE INTO students (student_id, name, roll_number, class_section, photo_path, email)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (student_id, name, roll_number, class_section, photo_path, email))
             conn.commit()
             return True
 
@@ -362,6 +363,52 @@ class DatabaseManager:
             cursor.execute("DELETE FROM face_embeddings")
             cursor.execute("DELETE FROM students")
             cursor.execute("DELETE FROM teachers")
+            cursor.execute("DELETE FROM timetable_routines")
             cursor.execute("DELETE FROM system_logs")
             conn.commit()
             logger.info("Production database cleaned. Ready for real registrations.")
+
+    # --- TIMETABLE & ROUTINE OPERATIONS ---
+
+    def add_timetable_routine(self, class_name: str, day_of_week: str, start_time: str,
+                              end_time: str, subject: str, teacher_id: Optional[str] = None,
+                              teacher_name: Optional[str] = None, room_number: str = "Room 101") -> int:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO timetable_routines (class_name, day_of_week, start_time, end_time, subject, teacher_id, teacher_name, room_number)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (class_name.strip(), day_of_week.strip(), start_time.strip(), end_time.strip(),
+                  subject.strip(), teacher_id.strip() if teacher_id else None,
+                  teacher_name.strip() if teacher_name else None, room_number.strip()))
+            conn.commit()
+            return cursor.lastrowid
+
+    def list_timetable_routines(self, class_name: Optional[str] = None, day_of_week: Optional[str] = None) -> List[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            query = "SELECT * FROM timetable_routines WHERE 1=1"
+            params = []
+            if class_name:
+                query += " AND class_name = ?"
+                params.append(class_name)
+            if day_of_week:
+                query += " AND day_of_week = ?"
+                params.append(day_of_week)
+            query += " ORDER BY CASE day_of_week WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3 WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6 ELSE 7 END, start_time ASC"
+            cursor.execute(query, params)
+            return [dict(row) for row in cursor.fetchall()]
+
+    def delete_timetable_routine(self, routine_id: int) -> bool:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM timetable_routines WHERE id = ?", (routine_id,))
+            conn.commit()
+            return True
+
+    def clear_all_timetable_routines(self) -> bool:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM timetable_routines")
+            conn.commit()
+            return True

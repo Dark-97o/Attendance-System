@@ -49,6 +49,27 @@ def init_db(db_path: str = DB_PATH) -> None:
         roll_number TEXT NOT NULL,
         class_section TEXT NOT NULL,
         photo_path TEXT,
+        email TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """)
+    try:
+        cursor.execute("ALTER TABLE students ADD COLUMN email TEXT;")
+    except Exception:
+        pass
+
+    # Weekly Timetable Routines (Monday to Saturday)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS timetable_routines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        class_name TEXT NOT NULL,
+        day_of_week TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        teacher_id TEXT,
+        teacher_name TEXT,
+        room_number TEXT DEFAULT 'Room 101',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
