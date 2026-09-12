@@ -12,6 +12,9 @@ const App = {
     presentStudents: new Set(),
     webcamStream: null,
     useWebcam: false,
+    enrollWebcamStream: null,
+    useEnrollWebcam: false,
+    enrollMode: 'student',
     isResettingPassword: false,
 
     getApiUrl(endpoint) {
@@ -47,17 +50,102 @@ const App = {
             toggleBtn.addEventListener('click', () => this.toggleLectureSession());
         }
 
-        // Refresh & Clear Enrolled Students Buttons
+        // Enrollment Mode Switcher (Student vs Teacher)
+        const btnModeStudent = document.getElementById('btnModeStudent');
+        const btnModeTeacher = document.getElementById('btnModeTeacher');
+        const studentForm = document.getElementById('studentEnrollForm');
+        const teacherForm = document.getElementById('teacherEnrollForm');
+        const btnLiveSnap = document.getElementById('btnLiveSnap');
+
+        if (btnModeStudent && btnModeTeacher) {
+            btnModeStudent.addEventListener('click', () => {
+                this.enrollMode = 'student';
+                btnModeStudent.classList.add('active');
+                btnModeTeacher.classList.remove('active');
+                if (studentForm) studentForm.style.display = 'block';
+                if (teacherForm) teacherForm.style.display = 'none';
+                if (btnLiveSnap) btnLiveSnap.innerHTML = '<i class="fa-solid fa-camera"></i> SNAP & ENROLL STUDENT FACE';
+            });
+
+            btnModeTeacher.addEventListener('click', () => {
+                this.enrollMode = 'teacher';
+                btnModeTeacher.classList.add('active');
+                btnModeStudent.classList.remove('active');
+                if (studentForm) studentForm.style.display = 'none';
+                if (teacherForm) teacherForm.style.display = 'block';
+                if (btnLiveSnap) btnLiveSnap.innerHTML = '<i class="fa-solid fa-camera"></i> SNAP & ENROLL TEACHER FACE';
+            });
+        }
+
+        // Desired Camera Switcher Dropdown in Enrollment Studio
+        const enrollCameraSelect = document.getElementById('enrollCameraSelect');
+        if (enrollCameraSelect) {
+            enrollCameraSelect.addEventListener('change', (e) => {
+                const selected = e.target.value;
+                this.switchEnrollCamera(selected);
+            });
+        }
+
+        const btnEnrollToggleCam = document.getElementById('btnEnrollToggleCam');
+        if (btnEnrollToggleCam) {
+            btnEnrollToggleCam.addEventListener('click', () => {
+                if (!enrollCameraSelect) {
+                    this.toggleCameraSource();
+                    return;
+                }
+                const opts = Array.from(enrollCameraSelect.options).map(o => o.value);
+                const curIdx = opts.indexOf(enrollCameraSelect.value);
+                const nextVal = opts[(curIdx + 1) % opts.length];
+                enrollCameraSelect.value = nextVal;
+                this.switchEnrollCamera(nextVal);
+            });
+        }
+
+        // Roster Directory Toggles (Students vs Teachers)
+        const btnShowStudentRoster = document.getElementById('btnShowStudentRoster');
+        const btnShowTeacherRoster = document.getElementById('btnShowTeacherRoster');
+        const studentsTableWrapper = document.getElementById('studentsTableWrapper');
+        const teachersTableWrapper = document.getElementById('teachersTableWrapper');
+
+        if (btnShowStudentRoster && btnShowTeacherRoster) {
+            btnShowStudentRoster.addEventListener('click', () => {
+                btnShowStudentRoster.classList.add('active');
+                btnShowTeacherRoster.classList.remove('active');
+                if (studentsTableWrapper) studentsTableWrapper.style.display = 'block';
+                if (teachersTableWrapper) teachersTableWrapper.style.display = 'none';
+                this.fetchEnrolledStudents();
+            });
+
+            btnShowTeacherRoster.addEventListener('click', () => {
+                btnShowTeacherRoster.classList.add('active');
+                btnShowStudentRoster.classList.remove('active');
+                if (studentsTableWrapper) studentsTableWrapper.style.display = 'none';
+                if (teachersTableWrapper) teachersTableWrapper.style.display = 'block';
+                this.fetchEnrolledTeachers();
+            });
+        }
+
+        // Refresh & Clear Enrolled Students / Roster Buttons
         const btnRefreshStudents = document.getElementById('btnRefreshStudents');
         if (btnRefreshStudents) {
             btnRefreshStudents.addEventListener('click', () => this.fetchEnrolledStudents());
+        }
+        const btnRefreshRoster = document.getElementById('btnRefreshRoster');
+        if (btnRefreshRoster) {
+            btnRefreshRoster.addEventListener('click', () => {
+                if (btnShowTeacherRoster && btnShowTeacherRoster.classList.contains('active')) {
+                    this.fetchEnrolledTeachers();
+                } else {
+                    this.fetchEnrolledStudents();
+                }
+            });
         }
         const btnClearAllStudents = document.getElementById('btnClearAllStudents');
         if (btnClearAllStudents) {
             btnClearAllStudents.addEventListener('click', () => this.clearAllEnrolledStudents());
         }
 
-        // Camera Source Switchers & Webcam Toggle
+        // Main Live Camera Source Switchers & Webcam Toggle
         const btnToggleCam = document.getElementById('btnToggleCam');
         if (btnToggleCam) {
             btnToggleCam.addEventListener('click', () => this.toggleCameraSource());
@@ -66,24 +154,23 @@ const App = {
         if (btnToggleWebcam) {
             btnToggleWebcam.addEventListener('click', () => this.toggleWebcam());
         }
-        const btnEnrollToggleCam = document.getElementById('btnEnrollToggleCam');
-        if (btnEnrollToggleCam) {
-            btnEnrollToggleCam.addEventListener('click', () => this.toggleCameraSource());
-        }
 
-        // Student Enrollment Form
-        const studentForm = document.getElementById('studentEnrollForm');
+        // Student Enrollment Form Submission
         if (studentForm) {
             studentForm.addEventListener('submit', (e) => this.handleStudentRegister(e));
         }
 
+        // Teacher Enrollment Form Submission
+        if (teacherForm) {
+            teacherForm.addEventListener('submit', (e) => this.handleTeacherRegister(e));
+        }
+
         // Live Camera Face Capture Button
-        const btnLiveSnap = document.getElementById('btnLiveSnap');
         if (btnLiveSnap) {
             btnLiveSnap.addEventListener('click', () => this.handleLiveFaceSnap());
         }
 
-        // File input change preview
+        // Student File input change preview
         const photoInput = document.getElementById('enrollPhotoFile');
         if (photoInput) {
             photoInput.addEventListener('change', (e) => {
@@ -96,7 +183,27 @@ const App = {
                         const statusTxt = document.getElementById('previewStatusText');
                         if (previewImg) previewImg.src = re.target.result;
                         if (previewBox) previewBox.style.display = 'block';
-                        if (statusTxt) statusTxt.textContent = `📁 File Selected: ${file.name} (Click Save & Enroll)`;
+                        if (statusTxt) statusTxt.textContent = `📁 Student File Selected: ${file.name} (Click Save & Upload)`;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        // Teacher File input change preview
+        const teacherPhotoInput = document.getElementById('enrollTeacherPhotoFile');
+        if (teacherPhotoInput) {
+            teacherPhotoInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (re) => {
+                        const previewImg = document.getElementById('enrollPhotoPreview');
+                        const previewBox = document.getElementById('enrollPhotoPreviewBox');
+                        const statusTxt = document.getElementById('previewStatusText');
+                        if (previewImg) previewImg.src = re.target.result;
+                        if (previewBox) previewBox.style.display = 'block';
+                        if (statusTxt) statusTxt.textContent = `📁 Faculty Photo: ${file.name} (Click Save Faculty Details)`;
                     };
                     reader.readAsDataURL(file);
                 }
@@ -127,8 +234,9 @@ const App = {
             this.fetchRecordsTable();
         } else if (tabId === 'tab-enroll') {
             this.fetchEnrolledStudents();
+            this.fetchEnrolledTeachers();
             const camFeed = document.getElementById('enrollLiveCameraFeed');
-            if (camFeed) camFeed.src = `${this.getApiUrl('/api/video/feed')}?t=` + Date.now();
+            if (camFeed && !this.useEnrollWebcam) camFeed.src = `${this.getApiUrl('/api/video/feed')}?t=` + Date.now();
         }
     },
 
@@ -844,6 +952,62 @@ const App = {
 
         const diagCamSource = document.getElementById('diagCamSource');
         if (diagCamSource) diagCamSource.textContent = `Camera ${currentDev} (Active)`;
+
+        const enrollCameraSelect = document.getElementById('enrollCameraSelect');
+        if (enrollCameraSelect && enrollCameraSelect.value !== 'webcam') {
+            enrollCameraSelect.value = String(currentDev);
+        }
+        const statusText = document.getElementById('enrollCamStatusText');
+        if (statusText && !this.useEnrollWebcam) statusText.textContent = `CAMERA ${currentDev} (LIVE)`;
+    },
+
+    async switchEnrollCamera(camVal) {
+        const videoEl = document.getElementById('enrollWebcamVideo');
+        const imgEl = document.getElementById('enrollLiveCameraFeed');
+        const statusText = document.getElementById('enrollCamStatusText');
+        const statusDot = document.getElementById('enrollCamStatusDot');
+
+        if (camVal === 'webcam') {
+            try {
+                if (!this.enrollWebcamStream) {
+                    const stream = await navigator.mediaDevices.getUserMedia({
+                        video: { width: { ideal: 640 }, height: { ideal: 480 } }
+                    });
+                    this.enrollWebcamStream = stream;
+                }
+                if (videoEl) {
+                    videoEl.srcObject = this.enrollWebcamStream;
+                    videoEl.style.display = 'block';
+                }
+                if (imgEl) imgEl.style.display = 'none';
+                if (statusText) statusText.textContent = "BROWSER WEBCAM (LIVE)";
+                if (statusDot) statusDot.style.background = "#38bdf8";
+                this.useEnrollWebcam = true;
+                this.showToast("Switched to Browser Live Webcam for Enrollment", "info");
+            } catch (err) {
+                console.error("Enrollment webcam error:", err);
+                this.showToast("Could not access browser webcam: " + err.message, "error");
+                const sel = document.getElementById('enrollCameraSelect');
+                if (sel) sel.value = "0";
+                this.switchEnrollCamera("0");
+            }
+        } else {
+            // Hardware Edge Camera 0, 1, or 2
+            if (this.enrollWebcamStream) {
+                this.enrollWebcamStream.getTracks().forEach(t => t.stop());
+                this.enrollWebcamStream = null;
+            }
+            if (videoEl) videoEl.style.display = 'none';
+            if (imgEl) imgEl.style.display = 'block';
+            if (statusDot) statusDot.style.background = "#10b981";
+            if (statusText) statusText.textContent = `CAMERA ${camVal} (LIVE)`;
+            this.useEnrollWebcam = false;
+
+            const camIdx = parseInt(camVal);
+            if (!isNaN(camIdx)) {
+                await this.switchCameraTo(camIdx);
+            }
+        }
     },
 
     refreshVideoFeeds() {
@@ -853,7 +1017,7 @@ const App = {
             liveImg.src = `${this.getApiUrl('/api/video/feed')}?t=${t}`;
         }
         const enrollLiveImg = document.getElementById('enrollLiveCameraFeed');
-        if (enrollLiveImg) {
+        if (enrollLiveImg && !this.useEnrollWebcam) {
             enrollLiveImg.src = `${this.getApiUrl('/api/video/feed')}?t=${t}`;
         }
     },
@@ -874,6 +1038,7 @@ const App = {
                 formData.append('name', name);
                 formData.append('roll_number', roll);
                 formData.append('class_section', section);
+                formData.append('entity_type', 'student');
                 formData.append('file', photoFile);
 
                 const faceRes = await fetch(this.getApiUrl('/api/enroll/face'), {
@@ -944,24 +1109,54 @@ const App = {
         const teacherId = document.getElementById('enrollTeacherId').value.trim();
         const name = document.getElementById('enrollTeacherName').value.trim();
         const dept = document.getElementById('enrollTeacherDept').value.trim();
-        const slot = parseInt(document.getElementById('enrollTeacherSlot').value);
+        const slotVal = document.getElementById('enrollTeacherSlot').value.trim();
+        const slot = slotVal ? parseInt(slotVal) : null;
+        const photoFile = document.getElementById('enrollTeacherPhotoFile').files[0];
 
         try {
-            const res = await fetch(this.getApiUrl('/api/enroll/teacher'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    teacher_id: teacherId,
-                    name: name,
-                    department: dept,
-                    fingerprint_id: slot
-                })
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || "Failed to register faculty member");
+            if (photoFile) {
+                const formData = new FormData();
+                formData.append('teacher_id', teacherId);
+                formData.append('name', name);
+                formData.append('department', dept);
+                if (slot !== null) formData.append('fingerprint_id', slot);
+                formData.append('entity_type', 'teacher');
+                formData.append('file', photoFile);
 
-            this.showToast(`Registered Faculty: ${name} (Fingerprint Slot #${slot})`, "success");
+                const faceRes = await fetch(this.getApiUrl('/api/enroll/face'), {
+                    method: 'POST',
+                    body: formData
+                });
+                const faceData = await faceRes.json();
+                if (!faceRes.ok) throw new Error(faceData.detail || "Failed to upload faculty photo");
+
+                const previewImg = document.getElementById('enrollPhotoPreview');
+                const previewBox = document.getElementById('enrollPhotoPreviewBox');
+                const statusTxt = document.getElementById('previewStatusText');
+                if (faceData.photo_preview && previewImg) previewImg.src = faceData.photo_preview;
+                if (previewBox) previewBox.style.display = 'block';
+                if (statusTxt) statusTxt.innerHTML = `<i class="fa-solid fa-circle-check"></i> Faculty Photo Enrolled for ${name}!`;
+
+                this.showToast(`Successfully registered Faculty ${name} with face!`, "success");
+            } else {
+                const res = await fetch(this.getApiUrl('/api/enroll/teacher'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        teacher_id: teacherId,
+                        name: name,
+                        department: dept,
+                        fingerprint_id: slot
+                    })
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "Failed to register faculty member");
+
+                this.showToast(`Registered Faculty: ${name} (${dept})`, "success");
+            }
+
             document.getElementById('teacherEnrollForm').reset();
+            this.fetchEnrolledTeachers();
             this.fetchSessionStatus();
         } catch (err) {
             this.showToast("Faculty registration failed: " + err.message, "error");
@@ -969,113 +1164,209 @@ const App = {
     },
 
     async handleLiveFaceSnap() {
-        const studentId = document.getElementById('enrollStudentId').value.trim();
-        const name = document.getElementById('enrollName').value.trim();
-        const roll = document.getElementById('enrollRoll').value.trim();
-        const section = document.getElementById('enrollSection').value.trim();
-
-        if (!studentId || !name || !roll || !section) {
-            this.showToast("Please fill in Student ID, Full Name, Roll, and Section before snapping photo", "error");
-            return;
-        }
-
         const snapBtn = document.getElementById('btnLiveSnap');
-        if (snapBtn) {
-            snapBtn.disabled = true;
-            snapBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Snapping & Detecting Face...';
-        }
 
-        try {
-            let res;
-            if (this.useWebcam && this.webcamStream) {
-                // Grab frame from browser webcam video element
-                const videoEl = document.getElementById('webcamVideo');
-                const canvas = document.createElement('canvas');
-                canvas.width = videoEl.videoWidth || 640;
-                canvas.height = videoEl.videoHeight || 480;
-                const ctx = canvas.getContext('2d');
-                ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
-                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+        if (this.enrollMode === 'student') {
+            const studentId = document.getElementById('enrollStudentId').value.trim();
+            const name = document.getElementById('enrollName').value.trim();
+            const roll = document.getElementById('enrollRoll').value.trim();
+            const section = document.getElementById('enrollSection').value.trim();
 
-                const formData = new FormData();
-                formData.append('student_id', studentId);
-                formData.append('name', name);
-                formData.append('roll_number', roll);
-                formData.append('class_section', section);
-                formData.append('file', blob, 'webcam_snap.jpg');
-
-                res = await fetch(this.getApiUrl('/api/enroll/face'), {
-                    method: 'POST',
-                    body: formData
-                });
-            } else {
-                // Trigger snap on edge hardware camera
-                res = await fetch(this.getApiUrl('/api/enroll/snap'), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        student_id: studentId,
-                        name: name,
-                        roll_number: roll,
-                        class_section: section
-                    })
-                });
+            if (!studentId || !name || !roll || !section) {
+                this.showToast("Please fill in Student Name, ID Number, Roll Number, and Class before snapping photo", "error");
+                return;
             }
 
-            const data = await res.json();
+            if (snapBtn) {
+                snapBtn.disabled = true;
+                snapBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Snapping & Detecting Student Face...';
+            }
 
-            if (res.ok && data.success) {
-                const previewImg = document.getElementById('enrollPhotoPreview');
-                const previewBox = document.getElementById('enrollPhotoPreviewBox');
-                const statusTxt = document.getElementById('previewStatusText');
+            try {
+                let res;
+                if (this.useEnrollWebcam && this.enrollWebcamStream) {
+                    // Grab frame from browser enrollment webcam video element
+                    const videoEl = document.getElementById('enrollWebcamVideo');
+                    const canvas = document.createElement('canvas');
+                    canvas.width = videoEl.videoWidth || 640;
+                    canvas.height = videoEl.videoHeight || 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
 
-                if (data.photo_preview && previewImg) {
-                    previewImg.src = data.photo_preview;
-                }
-                if (previewBox) {
-                    previewBox.style.display = 'block';
-                }
-                if (statusTxt) {
-                    const detectMsg = data.faces_detected > 0 ? `(${data.faces_detected} face detected & boxed)` : "(Face vector generated)";
-                    statusTxt.innerHTML = `<i class="fa-solid fa-circle-check"></i> Photo Captured & Enrolled for ${data.name || studentId}! ${detectMsg}`;
-                }
+                    const formData = new FormData();
+                    formData.append('student_id', studentId);
+                    formData.append('name', name);
+                    formData.append('roll_number', roll);
+                    formData.append('class_section', section);
+                    formData.append('entity_type', 'student');
+                    formData.append('file', blob, 'webcam_snap.jpg');
 
-                // Real-Time Cloud Sync to Firestore (100% Free)
-                if (window.FirebaseBridge) {
-                    window.FirebaseBridge.syncStudentProfile({
-                        student_id: studentId,
-                        name: name || data.name || studentId,
-                        roll_number: roll,
-                        class_section: section,
-                        photo_preview: data.photo_preview || ""
+                    res = await fetch(this.getApiUrl('/api/enroll/face'), {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    // Trigger snap on edge hardware camera
+                    res = await fetch(this.getApiUrl('/api/enroll/snap'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            student_id: studentId,
+                            name: name,
+                            roll_number: roll,
+                            class_section: section,
+                            entity_type: 'student'
+                        })
                     });
                 }
 
-                this.showToast(`Captured & Enrolled photo for ${data.name || studentId}!`, "success");
-                this.fetchEnrolledStudents();
-                this.fetchAnalytics();
-            } else {
-                this.showToast(data.detail || data.message || "Capture failed. Make sure your face is visible to camera.", "error");
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    const previewImg = document.getElementById('enrollPhotoPreview');
+                    const previewBox = document.getElementById('enrollPhotoPreviewBox');
+                    const statusTxt = document.getElementById('previewStatusText');
+
+                    if (data.photo_preview && previewImg) {
+                        previewImg.src = data.photo_preview;
+                    }
+                    if (previewBox) {
+                        previewBox.style.display = 'block';
+                    }
+                    if (statusTxt) {
+                        const detectMsg = data.faces_detected > 0 ? `(${data.faces_detected} face detected & boxed)` : "(Face vector generated)";
+                        statusTxt.innerHTML = `<i class="fa-solid fa-circle-check"></i> Student Photo Enrolled for ${data.name || studentId}! ${detectMsg}`;
+                    }
+
+                    // Real-Time Cloud Sync to Firestore (100% Free)
+                    if (window.FirebaseBridge) {
+                        window.FirebaseBridge.syncStudentProfile({
+                            student_id: studentId,
+                            name: name || data.name || studentId,
+                            roll_number: roll,
+                            class_section: section,
+                            photo_preview: data.photo_preview || ""
+                        });
+                    }
+
+                    this.showToast(`Captured & Enrolled face for student ${data.name || studentId}!`, "success");
+                    this.fetchEnrolledStudents();
+                    this.fetchAnalytics();
+                } else {
+                    this.showToast(data.detail || data.message || "Capture failed. Make sure face is visible to camera.", "error");
+                }
+            } catch (e) {
+                console.error("Live student snap error:", e);
+                this.showToast("Face capture error: " + e.message, "error");
+            } finally {
+                if (snapBtn) {
+                    snapBtn.disabled = false;
+                    snapBtn.innerHTML = '<i class="fa-solid fa-camera"></i> SNAP & ENROLL STUDENT FACE';
+                }
             }
-        } catch (e) {
-            console.error("Live snap error:", e);
-            this.showToast("Face capture error: " + e.message, "error");
-        } finally {
+        } else {
+            // Teacher Face Capture
+            const teacherId = document.getElementById('enrollTeacherId').value.trim();
+            const name = document.getElementById('enrollTeacherName').value.trim();
+            const dept = document.getElementById('enrollTeacherDept').value.trim();
+            const slotVal = document.getElementById('enrollTeacherSlot').value.trim();
+            const slot = slotVal ? parseInt(slotVal) : null;
+
+            if (!teacherId || !name || !dept) {
+                this.showToast("Please fill in Teacher ID, Full Name, and Department before snapping photo", "error");
+                return;
+            }
+
             if (snapBtn) {
-                snapBtn.disabled = false;
-                snapBtn.innerHTML = '<i class="fa-solid fa-camera"></i> SNAP & ENROLL FACE';
+                snapBtn.disabled = true;
+                snapBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Snapping & Detecting Faculty Face...';
+            }
+
+            try {
+                let res;
+                if (this.useEnrollWebcam && this.enrollWebcamStream) {
+                    const videoEl = document.getElementById('enrollWebcamVideo');
+                    const canvas = document.createElement('canvas');
+                    canvas.width = videoEl.videoWidth || 640;
+                    canvas.height = videoEl.videoHeight || 480;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.95));
+
+                    const formData = new FormData();
+                    formData.append('teacher_id', teacherId);
+                    formData.append('name', name);
+                    formData.append('department', dept);
+                    if (slot !== null) formData.append('fingerprint_id', slot);
+                    formData.append('entity_type', 'teacher');
+                    formData.append('file', blob, 'teacher_webcam_snap.jpg');
+
+                    res = await fetch(this.getApiUrl('/api/enroll/face'), {
+                        method: 'POST',
+                        body: formData
+                    });
+                } else {
+                    res = await fetch(this.getApiUrl('/api/enroll/snap'), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            teacher_id: teacherId,
+                            name: name,
+                            department: dept,
+                            fingerprint_id: slot,
+                            entity_type: 'teacher'
+                        })
+                    });
+                }
+
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    const previewImg = document.getElementById('enrollPhotoPreview');
+                    const previewBox = document.getElementById('enrollPhotoPreviewBox');
+                    const statusTxt = document.getElementById('previewStatusText');
+
+                    if (data.photo_preview && previewImg) {
+                        previewImg.src = data.photo_preview;
+                    }
+                    if (previewBox) {
+                        previewBox.style.display = 'block';
+                    }
+                    if (statusTxt) {
+                        const detectMsg = data.faces_detected > 0 ? `(${data.faces_detected} face detected & boxed)` : "(Face vector generated)";
+                        statusTxt.innerHTML = `<i class="fa-solid fa-circle-check"></i> Faculty Photo Enrolled for ${data.name || teacherId}! ${detectMsg}`;
+                    }
+
+                    this.showToast(`Enrolled faculty photo for ${data.name || teacherId}!`, "success");
+                    this.fetchEnrolledTeachers();
+                    this.fetchSessionStatus();
+                } else {
+                    this.showToast(data.detail || data.message || "Capture failed. Make sure face is visible to camera.", "error");
+                }
+            } catch (e) {
+                console.error("Live teacher snap error:", e);
+                this.showToast("Faculty face capture error: " + e.message, "error");
+            } finally {
+                if (snapBtn) {
+                    snapBtn.disabled = false;
+                    snapBtn.innerHTML = '<i class="fa-solid fa-camera"></i> SNAP & ENROLL TEACHER FACE';
+                }
             }
         }
     },
 
     async fetchEnrolledStudents() {
         const tbody = document.getElementById('enrolledStudentsTableBody');
-        if (!tbody) return;
+        const countBadge = document.getElementById('countStudentRoster');
 
         try {
             const res = await fetch(this.getApiUrl('/api/enroll/students'));
             const data = await res.json();
             const students = data.students || [];
+
+            if (countBadge) countBadge.textContent = students.length;
+            if (!tbody) return;
 
             tbody.innerHTML = '';
             if (students.length === 0) {
@@ -1112,7 +1403,80 @@ const App = {
             });
         } catch (e) {
             console.error("Error fetching enrolled students:", e);
-            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444;">Failed to load roster.</td></tr>';
+            if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444;">Failed to load roster.</td></tr>';
+        }
+    },
+
+    async fetchEnrolledTeachers() {
+        const tbody = document.getElementById('enrolledTeachersTableBody');
+        const countBadge = document.getElementById('countTeacherRoster');
+
+        try {
+            const res = await fetch(this.getApiUrl('/api/enroll/teachers'));
+            const data = await res.json();
+            const teachers = data.teachers || [];
+
+            if (countBadge) countBadge.textContent = teachers.length;
+            if (!tbody) return;
+
+            tbody.innerHTML = '';
+            if (teachers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 20px;">No registered faculty members found. Use the form above to register.</td></tr>';
+                return;
+            }
+
+            teachers.forEach(t => {
+                const tr = document.createElement('tr');
+                const photoSrc = t.photo_path ? `${this.getApiUrl('/faces/' + t.photo_path.split('\\\\').pop().split('/').pop())}?t=${Date.now()}` : '';
+                const photoHtml = photoSrc 
+                    ? `<img src="${photoSrc}" style="width: 38px; height: 38px; border-radius: 6px; object-fit: cover; border: 1px solid rgba(16, 185, 129, 0.3);" onerror="this.outerHTML='<div style=\\'width:38px;height:38px;border-radius:6px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669;\\'><i class=\\'fa-solid fa-chalkboard-user\\'></i></div>'">`
+                    : `<div style="width: 38px; height: 38px; border-radius: 6px; background: #ecfdf5; border: 1px solid #a7f3d0; display: flex; align-items: center; justify-content: center; color: #059669;"><i class="fa-solid fa-chalkboard-user"></i></div>`;
+
+                const slotBadge = t.fingerprint_id !== null && t.fingerprint_id !== undefined
+                    ? `<span style="display: inline-block; padding: 3px 8px; border-radius: 12px; background: rgba(79, 70, 229, 0.1); color: var(--accent-indigo); font-weight: 700; font-size: 0.72rem; border: 1px solid rgba(79, 70, 229, 0.2);">Slot #${t.fingerprint_id}</span>`
+                    : `<span style="color: #94a3b8; font-size: 0.78rem;">None</span>`;
+
+                tr.innerHTML = `
+                    <td>${photoHtml}</td>
+                    <td><strong>${t.teacher_id}</strong></td>
+                    <td>${t.name}</td>
+                    <td><span style="font-weight: 600; color: #334155;">${t.department || 'General'}</span></td>
+                    <td>${slotBadge}</td>
+                    <td><span style="display: inline-block; padding: 3px 8px; border-radius: 12px; background: rgba(16, 185, 129, 0.15); color: #10b981; font-weight: 700; font-size: 0.72rem; border: 1px solid rgba(16, 185, 129, 0.3);"><i class="fa-solid fa-check"></i> FACULTY ACTIVE</span></td>
+                    <td>
+                        <button class="btn-ctrl" onclick="App.deleteTeacher('${t.teacher_id}', '${(t.name || t.teacher_id).replace(/'/g, "\\'")}')" style="padding: 4px 10px; font-size: 0.72rem; background: rgba(239, 68, 68, 0.1); color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">
+                            <i class="fa-solid fa-trash-can"></i> Delete
+                        </button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        } catch (e) {
+            console.error("Error fetching enrolled teachers:", e);
+            if (tbody) tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #ef4444;">Failed to load faculty roster.</td></tr>';
+        }
+    },
+
+    async deleteTeacher(teacherId, teacherName) {
+        if (!confirm(`Are you sure you want to delete faculty member "${teacherName || teacherId}"?`)) {
+            return;
+        }
+
+        try {
+            const res = await fetch(this.getApiUrl(`/api/enroll/teacher/${encodeURIComponent(teacherId)}`), {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                this.showToast(`🗑️ Deleted faculty member: ${teacherName || teacherId}`, "info");
+                this.fetchEnrolledTeachers();
+                this.fetchSessionStatus();
+            } else {
+                this.showToast(data.detail || "Failed to delete faculty member", "error");
+            }
+        } catch (err) {
+            console.error("Error deleting teacher:", err);
+            this.showToast("Delete error: " + err.message, "error");
         }
     },
 

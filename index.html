@@ -348,18 +348,56 @@
                      ========================================================================== -->
                 <section class="tab-pane" id="tab-enroll">
                     <div class="enroll-grid">
-                        <!-- Student Face Registration Studio -->
+                        <!-- Biometric Enrollment Studio Card -->
                         <div class="enroll-card" style="grid-column: 1 / -1;">
-                            <h3><i class="fa-solid fa-id-card" style="color: var(--accent-indigo);"></i> Student Face Enrollment Studio</h3>
+                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 16px;">
+                                <div>
+                                    <h3 style="margin: 0; font-size: 1.2rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                                        <i class="fa-solid fa-id-card" style="color: var(--accent-indigo);"></i> 
+                                        <span>Biometric Enrollment Studio</span>
+                                    </h3>
+                                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: var(--text-muted);">
+                                        Register Students or Faculty with real-time neural face embeddings and camera selection.
+                                    </p>
+                                </div>
+                                
+                                <!-- Dual Registration Mode Selector -->
+                                <div class="enroll-mode-switcher">
+                                    <button type="button" class="btn-enroll-mode active" id="btnModeStudent" data-mode="student">
+                                        <i class="fa-solid fa-graduation-cap"></i> Student Registration
+                                    </button>
+                                    <button type="button" class="btn-enroll-mode" id="btnModeTeacher" data-mode="teacher">
+                                        <i class="fa-solid fa-chalkboard-user"></i> Faculty / Teacher Registration
+                                    </button>
+                                </div>
+                            </div>
                             
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
-                                <!-- Left: Live Optical Camera View & Snap -->
+                                <!-- Left Column: Camera Controls & Live Optical Capture -->
                                 <div>
-                                    <div style="position: relative; border-radius: var(--radius-sm); overflow: hidden; border: 2px solid rgba(79, 70, 229, 0.3); margin-bottom: 14px; background: #000; box-shadow: var(--shadow-md);">
-                                        <img id="enrollLiveCameraFeed" src="/api/video/feed" alt="Live Camera Preview" style="width: 100%; height: 220px; object-fit: cover; display: block;">
+                                    <!-- Desired Camera Switcher Toolbar -->
+                                    <div class="enroll-camera-toolbar" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center; background: #f8fafc; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                                        <label for="enrollCameraSelect" style="font-size: 0.8rem; font-weight: 700; color: #475569; white-space: nowrap; margin: 0; display: flex; align-items: center; gap: 6px;">
+                                            <i class="fa-solid fa-video" style="color: var(--accent-indigo);"></i> Camera:
+                                        </label>
+                                        <select id="enrollCameraSelect" class="form-control" style="padding: 6px 10px; font-size: 0.82rem; font-weight: 600; flex: 1; border: 1px solid #cbd5e1; border-radius: 6px;">
+                                            <option value="0" selected>Camera 0 (Default Edge Cam)</option>
+                                            <option value="1">Camera 1 (USB / External Cam)</option>
+                                            <option value="2">Camera 2 (Secondary Cam)</option>
+                                            <option value="webcam">Browser Live Webcam</option>
+                                        </select>
+                                        <button type="button" class="btn-ctrl" id="btnEnrollToggleCam" title="Quick Switch Camera" style="padding: 6px 12px; font-size: 0.82rem; font-weight: 600; white-space: nowrap; background: rgba(79, 70, 229, 0.08); border: 1px solid rgba(79, 70, 229, 0.2); color: var(--accent-indigo);">
+                                            <i class="fa-solid fa-arrows-rotate"></i> Switch Feed
+                                        </button>
+                                    </div>
+
+                                    <!-- Video Box with Edge Feed and Fallback Video Element -->
+                                    <div style="position: relative; border-radius: var(--radius-sm); overflow: hidden; border: 2px solid rgba(79, 70, 229, 0.3); margin-bottom: 14px; background: #000; box-shadow: var(--shadow-md); height: 220px;">
+                                        <img id="enrollLiveCameraFeed" src="/api/video/feed" alt="Live Camera Preview" style="width: 100%; height: 100%; object-fit: cover; display: block;">
+                                        <video id="enrollWebcamVideo" autoplay playsinline muted style="width: 100%; height: 100%; object-fit: cover; display: none;"></video>
                                         <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.75); padding: 4px 8px; border-radius: 4px; font-size: 0.72rem; color: #38bdf8; font-weight: 700; display: flex; align-items: center; gap: 6px;">
-                                            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
-                                            LIVE CAMERA VIEW
+                                            <span id="enrollCamStatusDot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+                                            <span id="enrollCamStatusText">CAMERA 0 (LIVE)</span>
                                         </div>
                                         <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.75); padding: 4px 8px; border-radius: 4px; font-size: 0.72rem; color: #cbd5e1;">
                                             Center face in frame
@@ -367,11 +405,8 @@
                                     </div>
 
                                     <div style="display: flex; gap: 8px; margin-bottom: 14px;">
-                                        <button type="button" class="btn-submit" id="btnLiveSnap" style="flex: 2; margin-bottom: 0; background: linear-gradient(135deg, #10b981, #0284c7); font-weight: 700; font-size: 0.95rem; padding: 12px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35); cursor: pointer;">
-                                            <i class="fa-solid fa-camera"></i> SNAP & ENROLL FACE
-                                        </button>
-                                        <button type="button" class="btn-ctrl" id="btnEnrollToggleCam" style="flex: 1; padding: 12px; font-size: 0.82rem; font-weight: 600; white-space: nowrap; background: rgba(79, 70, 229, 0.08); border: 1px solid rgba(79, 70, 229, 0.2); color: var(--accent-indigo);">
-                                            <i class="fa-solid fa-arrows-rotate"></i> Switch Feed
+                                        <button type="button" class="btn-submit" id="btnLiveSnap" style="width: 100%; margin-bottom: 0; background: linear-gradient(135deg, #10b981, #0284c7); font-weight: 700; font-size: 0.95rem; padding: 12px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35); cursor: pointer;">
+                                            <i class="fa-solid fa-camera"></i> SNAP & ENROLL STUDENT FACE
                                         </button>
                                     </div>
 
@@ -381,40 +416,101 @@
                                             <i class="fa-solid fa-circle-check"></i> Photo Captured & Enrolled!
                                         </div>
                                         <div style="width: 130px; height: 130px; margin: 0 auto; border-radius: var(--radius-sm); overflow: hidden; border: 2px solid var(--accent-indigo); box-shadow: var(--shadow-md);">
-                                            <img id="enrollPhotoPreview" src="" alt="Captured Student Face Preview" style="width: 100%; height: 100%; object-fit: cover;">
+                                            <img id="enrollPhotoPreview" src="" alt="Captured Face Preview" style="width: 100%; height: 100%; object-fit: cover;">
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Right: Student Profile Form & Upload -->
+                                <!-- Right Column: Student & Teacher Registration Forms -->
                                 <div>
+                                    <!-- 1. Student Registration Form -->
                                     <form id="studentEnrollForm">
-                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                                            <div class="form-group">
-                                                <label for="enrollStudentId">Student ID *</label>
-                                                <input type="text" id="enrollStudentId" class="form-control" placeholder="e.g. 101" required>
-                                            </div>
-                                            <div class="form-group">
-                                                <label for="enrollRoll">Roll Number *</label>
-                                                <input type="text" id="enrollRoll" class="form-control" placeholder="e.g. CS-101" required>
-                                            </div>
+                                        <div style="background: rgba(79, 70, 229, 0.04); border-left: 3px solid var(--accent-indigo); padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 0.8rem; color: #475569; font-weight: 600;">
+                                            <i class="fa-solid fa-user-graduate"></i> Registering New Student Profile
                                         </div>
+
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                             <div class="form-group">
                                                 <label for="enrollName">Full Name *</label>
                                                 <input type="text" id="enrollName" class="form-control" placeholder="e.g. John Doe" required>
                                             </div>
                                             <div class="form-group">
-                                                <label for="enrollSection">Class / Section *</label>
-                                                <input type="text" id="enrollSection" class="form-control" placeholder="e.g. CS-A" required>
+                                                <label for="enrollStudentId">ID Number *</label>
+                                                <input type="text" id="enrollStudentId" class="form-control" placeholder="e.g. STU-2026-001" required>
                                             </div>
                                         </div>
+
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                            <div class="form-group">
+                                                <label for="enrollRoll">Roll Number *</label>
+                                                <input type="text" id="enrollRoll" class="form-control" placeholder="e.g. CS-101" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="enrollSection">Class / Department *</label>
+                                                <select id="enrollSection" class="form-control" required style="font-weight: 600;">
+                                                    <option value="" disabled selected>Select Class / Department</option>
+                                                    <option value="CSE A">CSE A</option>
+                                                    <option value="CSE B">CSE B</option>
+                                                    <option value="CSE AIML">CSE AIML</option>
+                                                    <option value="CE">CE</option>
+                                                    <option value="ME">ME</option>
+                                                    <option value="ECE">ECE</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
                                         <div class="form-group">
                                             <label for="enrollPhotoFile">Or Upload Face Image File</label>
                                             <input type="file" id="enrollPhotoFile" class="form-control" accept="image/*">
                                         </div>
-                                        <button type="submit" class="btn-submit" style="width: 100%; font-size: 0.88rem; padding: 12px; font-weight: 700;">
-                                            <i class="fa-solid fa-cloud-arrow-up"></i> Save Details & Upload to Cloud
+
+                                        <button type="submit" class="btn-submit" id="btnSubmitStudentEnroll" style="width: 100%; font-size: 0.88rem; padding: 12px; font-weight: 700;">
+                                            <i class="fa-solid fa-cloud-arrow-up"></i> Save Student Details & Upload
+                                        </button>
+                                    </form>
+
+                                    <!-- 2. Teacher Registration Form (Hidden by Default) -->
+                                    <form id="teacherEnrollForm" style="display: none;">
+                                        <div style="background: rgba(16, 185, 129, 0.06); border-left: 3px solid #10b981; padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 0.8rem; color: #047857; font-weight: 600;">
+                                            <i class="fa-solid fa-chalkboard-user"></i> Registering Faculty / Teacher Profile
+                                        </div>
+
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                            <div class="form-group">
+                                                <label for="enrollTeacherName">Full Name *</label>
+                                                <input type="text" id="enrollTeacherName" class="form-control" placeholder="e.g. Prof. Alan Turing" required>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="enrollTeacherId">Teacher ID *</label>
+                                                <input type="text" id="enrollTeacherId" class="form-control" placeholder="e.g. FAC-CSE-01" required>
+                                            </div>
+                                        </div>
+
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                            <div class="form-group">
+                                                <label for="enrollTeacherDept">Department *</label>
+                                                <select id="enrollTeacherDept" class="form-control" required style="font-weight: 600;">
+                                                    <option value="" disabled selected>Select Department</option>
+                                                    <option value="CSE">Computer Science & Engineering (CSE)</option>
+                                                    <option value="CSE AIML">CSE (AI & Machine Learning)</option>
+                                                    <option value="CE">Civil Engineering (CE)</option>
+                                                    <option value="ME">Mechanical Engineering (ME)</option>
+                                                    <option value="ECE">Electronics & Communication (ECE)</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-group">
+                                                <label for="enrollTeacherSlot">Fingerprint Slot / PIN (1-127)</label>
+                                                <input type="number" id="enrollTeacherSlot" class="form-control" min="1" max="127" placeholder="e.g. 1">
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="enrollTeacherPhotoFile">Or Upload Face Image File</label>
+                                            <input type="file" id="enrollTeacherPhotoFile" class="form-control" accept="image/*">
+                                        </div>
+
+                                        <button type="submit" class="btn-submit" id="btnSubmitTeacherEnroll" style="width: 100%; font-size: 0.88rem; padding: 12px; font-weight: 700; background: linear-gradient(135deg, #059669, #0d9488);">
+                                            <i class="fa-solid fa-user-check"></i> Save Faculty Details & Register
                                         </button>
                                     </form>
                                 </div>
@@ -422,30 +518,59 @@
                         </div>
                     </div>
 
-                    <!-- Enrolled Students Directory Table -->
+                    <!-- Enrolled Directory Table Card -->
                     <div class="enroll-card" style="margin-top: 20px;">
-                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-                            <h3 style="margin: 0;"><i class="fa-solid fa-users" style="color: var(--accent-indigo);"></i> Enrolled Students Directory</h3>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                            <div class="roster-toggle-group">
+                                <button type="button" class="btn-roster-toggle active" id="btnShowStudentRoster">
+                                    <i class="fa-solid fa-graduation-cap"></i> Students Directory (<span id="countStudentRoster">0</span>)
+                                </button>
+                                <button type="button" class="btn-roster-toggle" id="btnShowTeacherRoster">
+                                    <i class="fa-solid fa-chalkboard-user"></i> Teachers Directory (<span id="countTeacherRoster">0</span>)
+                                </button>
+                            </div>
                             <div style="display: flex; gap: 8px;">
-                                <button id="btnRefreshStudents" class="btn-ctrl" style="padding: 6px 12px; font-size: 0.78rem;"><i class="fa-solid fa-arrows-rotate"></i> Refresh Roster</button>
+                                <button id="btnRefreshRoster" class="btn-ctrl" style="padding: 6px 12px; font-size: 0.78rem;"><i class="fa-solid fa-arrows-rotate"></i> Refresh Roster</button>
                                 <button id="btnClearAllStudents" class="btn-ctrl" style="padding: 6px 12px; font-size: 0.78rem; background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); color: #ef4444;"><i class="fa-solid fa-trash-can"></i> Clear All</button>
                             </div>
                         </div>
-                        <div class="table-responsive">
+
+                        <!-- Students Table Wrapper -->
+                        <div class="table-responsive" id="studentsTableWrapper">
                             <table class="data-table">
                                 <thead>
                                     <tr>
                                         <th>Photo</th>
-                                        <th>Student ID</th>
+                                        <th>ID Number</th>
                                         <th>Full Name</th>
                                         <th>Roll Number</th>
-                                        <th>Class/Section</th>
+                                        <th>Class / Branch</th>
                                         <th>Biometric Status</th>
                                         <th>Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="enrolledStudentsTableBody">
                                     <tr><td colspan="7" style="text-align: center; color: #94a3b8;">Loading roster...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Teachers Table Wrapper -->
+                        <div class="table-responsive" id="teachersTableWrapper" style="display: none;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Photo</th>
+                                        <th>Teacher ID</th>
+                                        <th>Full Name</th>
+                                        <th>Department</th>
+                                        <th>Fingerprint Slot</th>
+                                        <th>Status</th>
+                                        <th>Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="enrolledTeachersTableBody">
+                                    <tr><td colspan="7" style="text-align: center; color: #94a3b8;">Loading faculty roster...</td></tr>
                                 </tbody>
                             </table>
                         </div>

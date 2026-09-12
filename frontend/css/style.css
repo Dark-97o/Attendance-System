@@ -1548,3 +1548,77 @@ body {
 ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
 }
+
+/* ==========================================================================
+   Enrollment Studio Mode Switchers & Roster Toggles
+   ========================================================================== */
+
+.enroll-mode-switcher {
+    display: inline-flex;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    gap: 4px;
+}
+
+.btn-enroll-mode {
+    padding: 8px 16px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s ease;
+}
+
+.btn-enroll-mode:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.6);
+}
+
+.btn-enroll-mode.active {
+    background: #ffffff;
+    color: var(--accent-indigo);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.roster-toggle-group {
+    display: inline-flex;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+    gap: 4px;
+}
+
+.btn-roster-toggle {
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.btn-roster-toggle:hover {
+    color: var(--text-primary);
+}
+
+.btn-roster-toggle.active {
+    background: #ffffff;
+    color: var(--accent-indigo);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.06);
+}
+
