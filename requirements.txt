@@ -1,0 +1,16 @@
+# Core Framework & Server
+fastapi>=0.111.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9
+pydantic>=2.7.0
+
+# Computer Vision & Image Processing
+opencv-python>=4.9.0
+numpy>=1.26.0
+pillow>=10.0.0
+
+# Hardware & Serial Communication (R307 Fingerprint)
+pyserial>=3.5
+
+# Data Storage & Utilities
+requests>=2.31.0

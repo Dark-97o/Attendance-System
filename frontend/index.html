@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI Edge Attendance System - Raspberry Pi 5</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <!-- Chart.js for analytics -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation Bar -->
+        <header class="top-nav">
+            <div class="brand-section">
+                <div class="brand-badge">π5</div>
+                <div class="brand-text">
+                    <h1>AI Face Attendance</h1>
+                    <p>R307 Gated • Edge Neural Pipeline</p>
+                </div>
+            </div>
+
+            <!-- Navigation Tabs -->
+            <nav class="nav-tabs" role="tablist">
+                <button class="tab-btn active" data-tab="tab-kiosk" id="navKioskBtn">
+                    <span>📹</span> Live Kiosk
+                </button>
+                <button class="tab-btn" data-tab="tab-analytics" id="navAnalyticsBtn">
+                    <span>📊</span> Trends & Reports
+                </button>
+                <button class="tab-btn" data-tab="tab-enroll" id="navEnrollBtn">
+                    <span>👤</span> Enrollment Studio
+                </button>
+                <button class="tab-btn" data-tab="tab-diagnostics" id="navDiagnosticsBtn">
+                    <span>⚡</span> Hardware & R307
+                </button>
+            </nav>
+
+            <!-- Status Pills -->
+            <div class="nav-status">
+                <div class="status-pill" id="sessionPill">
+                    <div class="pulse-dot inactive"></div>
+                    <span>GATED / INACTIVE</span>
+                </div>
+                <div class="status-pill">
+                    <span id="systemClock" style="font-family: var(--font-mono); color: #fff;">00:00:00</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Viewport Area -->
+        <main class="main-viewport">
+            <!-- ==========================================================================
+                 TAB 1: LIVE KIOSK / CLASSROOM MONITOR
+                 ========================================================================== -->
+            <section class="tab-pane active" id="tab-kiosk">
+                <div class="kiosk-grid">
+                    <!-- Left Column: Video Viewport & Teacher Session Controls -->
+                    <div class="video-column">
+                        <!-- Teacher Authentication Banner -->
+                        <div class="teacher-banner session-inactive" id="teacherBanner">
+                            <div class="banner-info">
+                                <div class="banner-icon" id="bannerIcon">🔒</div>
+                                <div class="banner-details">
+                                    <h3 id="bannerTitle">Session Inactive (Attendance Logging Gated)</h3>
+                                    <p id="bannerSub">Teacher must authenticate via R307 fingerprint sensor to start lecture</p>
+                                </div>
+                            </div>
+                            <div style="display: flex; gap: 8px;">
+                                <button class="fp-action-btn" id="btnFingerprintAuth">
+                                    <span>👆</span> R307 Sensor
+                                </button>
+                                <button class="fp-action-btn" id="btnToggleSession" style="background: linear-gradient(135deg, #10b981, #059669);">
+                                    <span>▶</span> Start Lecture
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Live Camera Viewport -->
+                        <div class="video-viewport">
+                            <img id="liveVideoFeed" src="/api/video/feed" alt="Real-Time Annotated Edge Camera Feed" loading="eager">
+                            
+                            <div class="video-overlay-badges">
+                                <span class="badge" id="badgeCamFps">30 FPS</span>
+                                <span class="badge badge-night">CLAHE IR ACTIVE</span>
+                                <span class="badge" style="color: #10b981;">EDGE DETECT</span>
+                            </div>
+
+                            <div class="video-controls">
+                                <button class="btn-ctrl" id="btnToggleCam">🔄 Switch Feed</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: KPI Cards & Live Attendance Feed -->
+                    <div class="data-column">
+                        <!-- Top KPI Row -->
+                        <div class="kpi-row">
+                            <div class="kpi-card kpi-present">
+                                <div class="kpi-label">Present Now</div>
+                                <div class="kpi-value" id="kpiPresentCount">0</div>
+                                <div class="kpi-sub">Verified Students</div>
+                            </div>
+                            <div class="kpi-card">
+                                <div class="kpi-label">Enrolled Total</div>
+                                <div class="kpi-value" id="kpiEnrolledCount">0</div>
+                                <div class="kpi-sub">Class Roster</div>
+                            </div>
+                            <div class="kpi-card kpi-rate">
+                                <div class="kpi-label">Attendance Rate</div>
+                                <div class="kpi-value" id="kpiAttendanceRate">0%</div>
+                                <div class="kpi-sub">Active Session</div>
+                            </div>
+                        </div>
+
+                        <!-- Live Real-Time Attendance Feed -->
+                        <div class="feed-card">
+                            <div class="feed-header">
+                                <h3><span>⚡</span> Live Attendance Ticker</h3>
+                                <span style="font-size: 0.72rem; color: var(--text-muted);">Real-Time WebSocket Feed</span>
+                            </div>
+                            <div class="feed-container" id="attendanceFeed">
+                                <!-- Feed Items Dynamically Injected by App.js -->
+                                <div class="feed-item" style="opacity: 0.6;">
+                                    <div class="student-meta">
+                                        <div class="student-avatar">ℹ️</div>
+                                        <div class="student-info">
+                                            <h4>Waiting for Session</h4>
+                                            <p>Scan teacher fingerprint to initiate attendance recording</p>
+                                        </div>
+                                    </div>
+                                    <div class="feed-badges">
+                                        <div class="time-badge">STANDBY</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TAB 2: ANALYTICS & TRENDS
+                 ========================================================================== -->
+            <section class="tab-pane" id="tab-analytics">
+                <div class="analytics-container">
+                    <div class="charts-row">
+                        <div class="chart-card">
+                            <h3>Daily Attendance Trend (Past 7 Days)</h3>
+                            <div class="chart-box">
+                                <canvas id="dailyChart"></canvas>
+                            </div>
+                        </div>
+                        <div class="chart-card">
+                            <h3>Weekly Student Attendance Distribution</h3>
+                            <div class="chart-box">
+                                <canvas id="weeklyChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Attendance Records Table -->
+                    <div class="table-card">
+                        <div class="table-header-row">
+                            <h3>Recent Attendance Records (Audit Trail)</h3>
+                            <button class="btn-export" id="btnExportCsv">
+                                <span>📥</span> Export CSV Report
+                            </button>
+                        </div>
+                        <div style="max-height: 260px; overflow-y: auto;">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Student Name</th>
+                                        <th>Roll Number</th>
+                                        <th>Course</th>
+                                        <th>Entry Time</th>
+                                        <th>Status</th>
+                                        <th>Match Confidence</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recordsTableBody">
+                                    <!-- Populated via API -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TAB 3: ENROLLMENT STUDIO
+                 ========================================================================== -->
+            <section class="tab-pane" id="tab-enroll">
+                <div class="enroll-grid">
+                    <!-- Student Face Registration Form -->
+                    <div class="enroll-card">
+                        <h3><span>📸</span> Student Face Enrollment</h3>
+                        
+                        <!-- Live Camera Viewport inside Enrollment Studio -->
+                        <div style="position: relative; border-radius: var(--radius-sm); overflow: hidden; border: 2px solid rgba(56, 189, 248, 0.4); margin-bottom: 14px; background: #000; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+                            <img id="enrollLiveCameraFeed" src="/api/video/feed" alt="Live Camera Preview" style="width: 100%; height: 200px; object-fit: cover; display: block;">
+                            <div style="position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,0.75); padding: 4px 8px; border-radius: 4px; font-size: 0.72rem; color: #38bdf8; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+                                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
+                                OPTICAL CAMERA VIEW
+                            </div>
+                            <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.75); padding: 4px 8px; border-radius: 4px; font-size: 0.72rem; color: #cbd5e1;">
+                                Position your face in center
+                            </div>
+                        </div>
+
+                        <!-- Instant Snap & Switch Camera Buttons -->
+                        <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+                            <button type="button" class="btn-submit" id="btnLiveSnap" style="flex: 2; margin-bottom: 0; background: linear-gradient(135deg, #10b981, #0284c7); font-weight: 700; font-size: 0.95rem; padding: 12px; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35); cursor: pointer;">
+                                📸 SNAP & ENROLL FACE
+                            </button>
+                            <button type="button" class="btn-ctrl" id="btnEnrollToggleCam" style="flex: 1; padding: 12px; font-size: 0.82rem; font-weight: 600; white-space: nowrap; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); color: #38bdf8;">
+                                🔄 Switch Feed
+                            </button>
+                        </div>
+
+                        <!-- Live Photo Preview Box (shows captured face) -->
+                        <div class="photo-preview-box" id="enrollPhotoPreviewBox" style="display: none; margin-bottom: 14px; padding: 12px; background: rgba(16, 185, 129, 0.1); border-radius: var(--radius-sm); border: 1px solid rgba(16, 185, 129, 0.3); text-align: center;">
+                            <div style="font-size: 0.85rem; color: var(--accent-green); font-weight: 700; margin-bottom: 8px;" id="previewStatusText">
+                                ✅ Photo Captured & Enrolled!
+                            </div>
+                            <div style="width: 130px; height: 130px; margin: 0 auto; border-radius: var(--radius-sm); overflow: hidden; border: 2px solid var(--accent-cyan); box-shadow: var(--glow-cyan);">
+                                <img id="enrollPhotoPreview" src="" alt="Captured Student Face Preview" style="width: 100%; height: 100%; object-fit: cover;">
+                            </div>
+                        </div>
+
+                        <form id="studentEnrollForm">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div class="form-group">
+                                    <label for="enrollStudentId">Student ID *</label>
+                                    <input type="text" id="enrollStudentId" class="form-control" placeholder="e.g. 101" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="enrollRoll">Roll Number *</label>
+                                    <input type="text" id="enrollRoll" class="form-control" placeholder="e.g. CS-101" required>
+                                </div>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                <div class="form-group">
+                                    <label for="enrollName">Full Name *</label>
+                                    <input type="text" id="enrollName" class="form-control" placeholder="e.g. John Doe" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="enrollSection">Class / Section *</label>
+                                    <input type="text" id="enrollSection" class="form-control" placeholder="e.g. CS-A" required>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="enrollPhotoFile">Or Upload Face Image from PC</label>
+                                <input type="file" id="enrollPhotoFile" class="form-control" accept="image/*">
+                            </div>
+                            <button type="submit" class="btn-submit" style="width: 100%; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--border-color); font-size: 0.85rem;">
+                                💾 Upload Photo File / Save Details
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- Faculty / Teacher Registration -->
+                    <div class="enroll-card">
+                        <h3><span>👨‍🏫</span> Faculty & Fingerprint Slot Registration</h3>
+                        <form id="teacherEnrollForm">
+                            <div class="form-group">
+                                <label for="enrollTeacherId">Teacher ID *</label>
+                                <input type="text" id="enrollTeacherId" class="form-control" placeholder="e.g. TCH001" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="enrollTeacherName">Teacher Full Name *</label>
+                                <input type="text" id="enrollTeacherName" class="form-control" placeholder="e.g. Dr. Alan Turing" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="enrollTeacherDept">Department *</label>
+                                <input type="text" id="enrollTeacherDept" class="form-control" placeholder="e.g. Computer Science" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="enrollTeacherSlot">Assigned R307 Fingerprint Slot (1-300) *</label>
+                                <input type="number" id="enrollTeacherSlot" class="form-control" placeholder="1" min="1" max="300" required>
+                            </div>
+                            <button type="submit" class="btn-submit">Register Teacher & Pair Biometrics</button>
+                        </form>
+
+                        <div style="margin-top: 24px; padding: 14px; background: rgba(0,0,0,0.3); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <h4 style="font-size: 0.82rem; margin-bottom: 6px; color: var(--accent-cyan);">💡 Edge AI Best Practice</h4>
+                            <p style="font-size: 0.74rem; color: var(--text-secondary); line-height: 1.4;">
+                                Dual-Biometric architecture enforces faculty authentication via hardware R307 fingerprint sensor before face logging is unlocked, eliminating fraudulent attendance logging when a lecture is not in progress.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Enrolled Students Directory Table -->
+                <div class="enroll-card" style="margin-top: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                        <h3 style="margin: 0;"><span>👥</span> Enrolled Students Directory</h3>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="btnRefreshStudents" class="btn-ctrl" style="padding: 6px 12px; font-size: 0.78rem;">🔄 Refresh Roster</button>
+                            <button id="btnClearAllStudents" class="btn-ctrl" style="padding: 6px 12px; font-size: 0.78rem; background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.4); color: #f87171;">🗑️ Clear All</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Photo</th>
+                                    <th>Student ID</th>
+                                    <th>Full Name</th>
+                                    <th>Roll Number</th>
+                                    <th>Class/Section</th>
+                                    <th>Biometric Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="enrolledStudentsTableBody">
+                                <tr><td colspan="7" style="text-align: center; color: #94a3b8;">Loading roster...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TAB 4: HARDWARE & DIAGNOSTICS CONSOLE
+                 ========================================================================== -->
+            <section class="tab-pane" id="tab-diagnostics">
+                <div class="diag-grid">
+                    <!-- R307 Optical Fingerprint Sensor Virtual Pad & Status -->
+                    <div class="enroll-card">
+                        <h3><span>👆</span> R307 Optical Fingerprint Subsystem</h3>
+                        <p style="font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 16px;">
+                            Hardware UART connection via Raspberry Pi 5 UART0 (/dev/ttyAMA0) at 57,600 baud.
+                        </p>
+                        
+                        <div class="fp-scanner-box">
+                            <div class="touch-prism" id="touchPrism" title="Place Finger on Prism to Authenticate">
+                                <span class="fingerprint-icon">🖂</span>
+                            </div>
+                            <p style="font-size: 0.85rem; font-weight: 700; color: #38bdf8;">SCAN FACULTY FINGERPRINT</p>
+                            <p style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Transmits UART packet 0xEF01 to R307 Optical Prism</p>
+                        </div>
+
+                        <div style="margin-top: 14px;">
+                            <div class="metric-item">
+                                <span>Sensor Mode:</span>
+                                <span id="diagFpMode">UART /dev/ttyAMA0</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Raspberry Pi 5 Telemetry -->
+                    <div class="enroll-card">
+                        <h3><span>🍓</span> Raspberry Pi 5 Telemetry</h3>
+                        <div class="pi-metrics-list">
+                            <div class="metric-item">
+                                <span>SoC Temperature:</span>
+                                <span id="diagTemp">48.5°C</span>
+                            </div>
+                            <div class="metric-item">
+                                <span>CPU Utilization:</span>
+                                <span id="diagCpu">18.5%</span>
+                            </div>
+                            <div class="metric-item">
+                                <span>RAM Usage:</span>
+                                <span id="diagRam">1.4 GB / 4.0 GB (35%)</span>
+                            </div>
+                            <div class="metric-item">
+                                <span>Storage Available:</span>
+                                <span id="diagDisk">24.5 GB Free</span>
+                            </div>
+                            <div class="metric-item">
+                                <span>Camera Frame Rate:</span>
+                                <span id="diagFps">30 FPS</span>
+                            </div>
+                            <div class="metric-item">
+                                <span>Active Video Device:</span>
+                                <span id="diagCamSource" style="color: #38bdf8; font-weight: 700;">Camera 0</span>
+                            </div>
+                            <div class="metric-item">
+                                <span>Video Capture Driver:</span>
+                                <span id="diagCamMode">OpenCV V4L2 / DirectShow</span>
+                            </div>
+                            <div class="metric-item">
+                                <span>Architecture:</span>
+                                <span>ARM Cortex-A76 Quad-Core</span>
+                            </div>
+                        </div>
+
+                        <!-- Camera Hardware Controls -->
+                        <div style="margin-top: 16px; padding: 12px; background: rgba(0,0,0,0.3); border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
+                            <div style="font-size: 0.8rem; font-weight: 700; color: #cbd5e1; margin-bottom: 8px;">📷 Hardware Camera Switcher</div>
+                            <div style="display: flex; gap: 8px;">
+                                <button type="button" class="btn-ctrl" id="btnDiagCam0" style="flex: 1; padding: 8px; font-size: 0.78rem;">📹 Activate Cam 0</button>
+                                <button type="button" class="btn-ctrl" id="btnDiagCam1" style="flex: 1; padding: 8px; font-size: 0.78rem;">📹 Activate Cam 1</button>
+                                <button type="button" class="btn-ctrl" id="btnDiagToggle" style="flex: 1; padding: 8px; font-size: 0.78rem; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border-color: rgba(56, 189, 248, 0.4);">🔄 Toggle Feed</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Toast Notifications Container -->
+        <div class="toast-container" id="toastContainer"></div>
+    </div>
+
+    <!-- Application Script -->
+    <script src="/static/js/charts.js"></script>
+    <script src="/static/js/app.js?v=3.0"></script>
+</body>
+</html>
