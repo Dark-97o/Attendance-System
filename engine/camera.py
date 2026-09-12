@@ -32,37 +32,42 @@ class CameraStream:
         self.is_synthetic = False
         self._sim_step = 0
 
+    def _open_capture(self, src: Any) -> Optional[cv2.VideoCapture]:
+        """Attempts to open capture device with OS-specific backend fallback."""
+        cap = None
+        try:
+            if isinstance(src, int) or (isinstance(src, str) and str(src).isdigit()):
+                dev_idx = int(src)
+                if hasattr(cv2, 'CAP_DSHOW'):
+                    cap = cv2.VideoCapture(dev_idx, cv2.CAP_DSHOW)
+                if not cap or not cap.isOpened():
+                    cap = cv2.VideoCapture(dev_idx)
+            else:
+                cap = cv2.VideoCapture(src)
+
+            if cap and cap.isOpened():
+                cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
+                cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+                cap.set(cv2.CAP_PROP_FPS, self.fps_target)
+                return cap
+            if cap:
+                cap.release()
+        except Exception as e:
+            logger.debug(f"Camera open error for {src}: {e}")
+        return None
+
     def start(self) -> bool:
         """Starts background frame acquisition thread."""
         if self.running:
             return True
 
-        # Attempt to open physical capture source
-        opened = False
-        try:
-            if isinstance(self.src, int) or (isinstance(self.src, str) and self.src.isdigit()):
-                dev_idx = int(self.src)
-                # Use DirectShow on Windows or V4L2 on Linux for faster initialization
-                if cv2.CAP_DSHOW is not None and hasattr(cv2, 'CAP_DSHOW'):
-                    self.cap = cv2.VideoCapture(dev_idx, cv2.CAP_DSHOW)
-                else:
-                    self.cap = cv2.VideoCapture(dev_idx)
-            else:
-                self.cap = cv2.VideoCapture(self.src)
-
-            if self.cap and self.cap.isOpened():
-                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-                self.cap.set(cv2.CAP_PROP_FPS, self.fps_target)
-                opened = True
-                self.is_synthetic = False
-                logger.info(f"Connected to physical camera source {self.src} ({self.width}x{self.height})")
-        except Exception as e:
-            logger.warning(f"Could not open physical camera {self.src}: {e}")
-
-        if not opened:
+        self.cap = self._open_capture(self.src)
+        if self.cap and self.cap.isOpened():
+            self.is_synthetic = False
+            logger.info(f"Connected to physical camera source {self.src} ({self.width}x{self.height})")
+        else:
             self.is_synthetic = True
-            logger.info("Initializing Synthetic Classroom Video Feed for development/demonstration...")
+            logger.info("Physical camera not detected yet. Awaiting hardware signal on source %s...", self.src)
 
         self.running = True
         self.thread = threading.Thread(target=self._update_loop, daemon=True, name="CameraThread")
@@ -89,7 +94,6 @@ class CameraStream:
             self.cap = None
             self.frame = None
 
-            # Small delay for OS driver to release hardware handle
             time.sleep(0.2)
 
             if isinstance(new_src, str) and new_src.isdigit():
@@ -97,50 +101,63 @@ class CameraStream:
             else:
                 self.src = new_src
 
-            opened = False
-            try:
-                if isinstance(self.src, int):
-                    # Try CAP_DSHOW first on Windows for robust switching and fast startup
-                    if hasattr(cv2, 'CAP_DSHOW'):
-                        self.cap = cv2.VideoCapture(self.src, cv2.CAP_DSHOW)
-                    if not self.cap or not self.cap.isOpened():
-                        self.cap = cv2.VideoCapture(self.src)
-                else:
-                    self.cap = cv2.VideoCapture(self.src)
-
-                if self.cap and self.cap.isOpened():
-                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-                    self.cap.set(cv2.CAP_PROP_FPS, self.fps_target)
-                    opened = True
-                    self.is_synthetic = False
-                    logger.info(f"Successfully switched to camera source {self.src}")
-            except Exception as e:
-                logger.warning(f"Failed to switch to camera {self.src}: {e}")
-
-            if not opened:
+            self.cap = self._open_capture(self.src)
+            if self.cap and self.cap.isOpened():
+                self.is_synthetic = False
+                logger.info(f"Successfully switched to camera source {self.src}")
+                return True
+            else:
                 self.is_synthetic = True
                 logger.warning(f"Could not open camera {self.src}; reverting to standby mode")
-            return opened
+                return False
 
     def _update_loop(self):
         last_time = time.time()
         frames_in_sec = 0
+        failed_reads = 0
+        last_reconnect_attempt = 0.0
 
         while self.running:
             start_frame_time = time.time()
+            now = time.time()
+
+            # If in synthetic/standby mode, periodically re-probe the physical camera
+            if self.is_synthetic and (now - last_reconnect_attempt > 3.0):
+                last_reconnect_attempt = now
+                with self.lock:
+                    if self.cap:
+                        try:
+                            self.cap.release()
+                        except Exception:
+                            pass
+                        self.cap = None
+                    new_cap = self._open_capture(self.src)
+                    if new_cap and new_cap.isOpened():
+                        self.cap = new_cap
+                        self.is_synthetic = False
+                        failed_reads = 0
+                        logger.info(f"Live Camera reconnected successfully on source {self.src}")
 
             if not self.is_synthetic and self.cap and self.cap.isOpened():
                 ret, frame = self.cap.read()
-                if ret and frame is not None:
+                if ret and frame is not None and frame.size > 0:
+                    failed_reads = 0
                     with self.lock:
                         self.frame = frame
                 else:
-                    # Camera disconnected or EOF; fall back to synthetic
-                    logger.warning("Physical camera read failed; falling back to synthetic feed")
-                    self.is_synthetic = True
+                    failed_reads += 1
+                    if failed_reads >= 5:
+                        logger.warning("Physical camera read failed repeatedly; switching to standby and retrying...")
+                        self.is_synthetic = True
+                        with self.lock:
+                            if self.cap:
+                                try:
+                                    self.cap.release()
+                                except Exception:
+                                    pass
+                                self.cap = None
             else:
-                # Physical camera standby frame
+                # Standby test pattern while awaiting camera
                 frame = self._generate_standby_frame()
                 with self.lock:
                     self.frame = frame

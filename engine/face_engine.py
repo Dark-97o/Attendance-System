@@ -30,10 +30,22 @@ class FaceEngine:
         self.tracker = MultiFaceTracker(max_disappeared=15, iou_threshold=0.3)
 
         # Initialize Haar Cascade Fallback
-        cascade_path = os.path.join(cv2.data.haarcascades, "haarcascade_frontalface_default.xml")
-        if not os.path.exists(cascade_path):
-            raise FileNotFoundError(f"OpenCV Haar cascade not found at {cascade_path}")
-        self.face_cascade = cv2.CascadeClassifier(cascade_path)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cascade_candidates = [
+            os.path.join(base_dir, "models", "haarcascade_frontalface_default.xml"),
+            os.path.join(getattr(cv2.data, "haarcascades", ""), "haarcascade_frontalface_default.xml")
+        ]
+        self.face_cascade = None
+        for candidate in cascade_candidates:
+            if candidate and os.path.exists(candidate):
+                try:
+                    self.face_cascade = cv2.CascadeClassifier(candidate)
+                    logger.info(f"Loaded Haar cascade fallback from {candidate}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Could not load Haar cascade from {candidate}: {e}")
+        if self.face_cascade is None:
+            logger.warning("Haar cascade file not available; relying on YuNet neural face detector.")
         self.detector_lock = threading.Lock()
 
         # Initialize YuNet Deep Neural Network Face Detector (High accuracy under backlight/angles)
@@ -101,13 +113,14 @@ class FaceEngine:
                     logger.warning(f"YuNet detection warning: {ye}")
 
             # 2. Fallback: Haar Cascade
-            try:
-                gray = np.ascontiguousarray(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
-                haar_faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30))
-                return [(int(x), int(y), int(bw), int(bh)) for (x, y, bw, bh) in haar_faces]
-            except Exception as he:
-                logger.warning(f"Haar detection warning: {he}")
-                return []
+            if self.face_cascade is not None:
+                try:
+                    gray = np.ascontiguousarray(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
+                    haar_faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30))
+                    return [(int(x), int(y), int(bw), int(bh)) for (x, y, bw, bh) in haar_faces]
+                except Exception as he:
+                    logger.warning(f"Haar detection warning: {he}")
+            return []
 
     def refresh_enrolled_cache(self):
         """Loads all student face embeddings from SQLite into memory for sub-millisecond vector search."""

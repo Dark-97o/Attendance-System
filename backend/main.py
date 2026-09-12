@@ -213,26 +213,25 @@ async def websocket_endpoint(websocket: WebSocket):
             active_websockets.remove(websocket)
 
 # Static files for 7-Inch Touchscreen UI
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
-FACES_DIR = os.path.join(ROOT_DIR, "data", "faces")
+FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+FACES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "faces")
 os.makedirs(FACES_DIR, exist_ok=True)
 
-CSS_DIR = os.path.join(ROOT_DIR, "css") if os.path.exists(os.path.join(ROOT_DIR, "css")) else os.path.join(FRONTEND_DIR, "css")
-JS_DIR = os.path.join(ROOT_DIR, "js") if os.path.exists(os.path.join(ROOT_DIR, "js")) else os.path.join(FRONTEND_DIR, "js")
-
-if os.path.exists(CSS_DIR):
-    app.mount("/css", StaticFiles(directory=CSS_DIR), name="css")
-if os.path.exists(JS_DIR):
-    app.mount("/js", StaticFiles(directory=JS_DIR), name="js")
 if os.path.exists(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+    css_path = os.path.join(FRONTEND_DIR, "css")
+    js_path = os.path.join(FRONTEND_DIR, "js")
+    if os.path.exists(css_path):
+        app.mount("/css", StaticFiles(directory=css_path), name="css")
+    if os.path.exists(js_path):
+        app.mount("/js", StaticFiles(directory=js_path), name="js")
+
 if os.path.exists(FACES_DIR):
     app.mount("/faces", StaticFiles(directory=FACES_DIR), name="faces")
 
 @app.get("/")
 def serve_index():
-    for p in [os.path.join(ROOT_DIR, "index.html"), os.path.join(FRONTEND_DIR, "index.html")]:
-        if os.path.exists(p):
-            return FileResponse(p)
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {"message": "Attendance System Backend Running."}

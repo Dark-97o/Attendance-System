@@ -81,7 +81,9 @@ class AttendanceManager:
     def end_session(self) -> Optional[Dict[str, Any]]:
         """Ends the current active lecture session."""
         if not self.active_session:
-            return None
+            self.active_session = self.db.get_active_session()
+            if not self.active_session:
+                return None
         
         ended_session = self.db.end_active_session()
         prev = self.active_session
@@ -91,7 +93,7 @@ class AttendanceManager:
         logger.info(f"Lecture Session ENDED: Code {prev['session_code']}")
         self._broadcast("SESSION_ENDED", ended_session or prev)
         self.db.log_event("SESSION_END", f"Session ended for {prev.get('course_name')}")
-        return ended_session
+        return ended_session or prev
 
     def get_session_status(self) -> Dict[str, Any]:
         """Returns status of session and teacher presence."""
