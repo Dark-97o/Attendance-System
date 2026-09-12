@@ -6,6 +6,7 @@
 ![Sensor](https://img.shields.io/badge/Sensor-R307%20Optical%20UART-orange.svg)
 ![Framework](https://img.shields.io/badge/Backend-FastAPI-009688.svg)
 ![Display](https://img.shields.io/badge/UI-7--Inch%20Touchscreen%20Kiosk-purple.svg)
+[![Live Demo](https://img.shields.io/badge/Live%20Demo-GitHub%20Pages-brightgreen.svg?style=for-the-badge&logo=github)](https://dark-97o.github.io/Attendance-System/)
 
 ---
 
