@@ -26,12 +26,17 @@ class DatabaseManager:
 
     # --- TEACHER OPERATIONS ---
 
-    def register_teacher(self, teacher_id: str, name: str, department: str, fingerprint_id: int = 1, photo_path: Optional[str] = None) -> bool:
+    def register_teacher(self, teacher_id: str, name: str, department: str, fingerprint_id: Optional[int] = None, photo_path: Optional[str] = None) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO teachers (teacher_id, name, department, fingerprint_id, photo_path)
+                INSERT INTO teachers (teacher_id, name, department, fingerprint_id, photo_path)
                 VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(teacher_id) DO UPDATE SET
+                    name = excluded.name,
+                    department = excluded.department,
+                    fingerprint_id = COALESCE(excluded.fingerprint_id, teachers.fingerprint_id),
+                    photo_path = COALESCE(excluded.photo_path, teachers.photo_path)
             """, (teacher_id, name, department, fingerprint_id, photo_path))
             conn.commit()
             return True
@@ -71,8 +76,14 @@ class DatabaseManager:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO students (student_id, name, roll_number, class_section, photo_path, email)
+                INSERT INTO students (student_id, name, roll_number, class_section, photo_path, email)
                 VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(student_id) DO UPDATE SET
+                    name = excluded.name,
+                    roll_number = excluded.roll_number,
+                    class_section = excluded.class_section,
+                    photo_path = COALESCE(excluded.photo_path, students.photo_path),
+                    email = COALESCE(excluded.email, students.email)
             """, (student_id, name, roll_number, class_section, photo_path, email))
             conn.commit()
             return True

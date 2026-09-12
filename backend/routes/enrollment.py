@@ -29,7 +29,7 @@ class RegisterTeacherRequest(BaseModel):
     teacher_id: str
     name: str
     department: str
-    fingerprint_id: Optional[int] = 1
+    fingerprint_id: Optional[int] = None
 
 @router.get("/students")
 def list_students():
