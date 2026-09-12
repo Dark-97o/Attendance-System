@@ -12,6 +12,7 @@ const App = {
     presentStudents: new Set(),
     webcamStream: null,
     useWebcam: false,
+    isResettingPassword: false,
 
     getApiUrl(endpoint) {
         if (window.location.protocol !== 'file:' && window.location.port === '8080') {
@@ -141,30 +142,165 @@ const App = {
         const btnLogout = document.getElementById('btnLogout');
         const btnTogglePwd = document.getElementById('btnTogglePassword');
         const pwdInput = document.getElementById('authPassword');
+        const btnForgotPassword = document.getElementById('btnForgotPassword');
+        const forgotPasswordBox = document.getElementById('forgotPasswordBox');
+        const forgotPasswordForm = document.getElementById('forgotPasswordForm');
+        const resetEmailInput = document.getElementById('resetEmail');
+        const resetErrorBanner = document.getElementById('resetErrorBanner');
+        const resetSuccessBanner = document.getElementById('resetSuccessBanner');
+        const btnBackFromReset = document.getElementById('btnBackFromReset');
+
+        const returnToSignIn = () => {
+            this.isResettingPassword = false;
+            if (tabSignIn) tabSignIn.click();
+        };
 
         if (tabSignIn) {
             tabSignIn.addEventListener('click', () => {
+                this.isResettingPassword = false;
                 tabSignIn.classList.add('active');
                 if (tabRegister) tabRegister.classList.remove('active');
                 if (form) form.style.display = 'flex';
                 if (comingSoonBox) comingSoonBox.style.display = 'none';
+                if (forgotPasswordBox) forgotPasswordBox.style.display = 'none';
                 if (errorBanner) errorBanner.style.display = 'none';
             });
         }
 
         if (tabRegister) {
             tabRegister.addEventListener('click', () => {
+                this.isResettingPassword = false;
                 tabRegister.classList.add('active');
                 if (tabSignIn) tabSignIn.classList.remove('active');
                 if (form) form.style.display = 'none';
                 if (comingSoonBox) comingSoonBox.style.display = 'flex';
+                if (forgotPasswordBox) forgotPasswordBox.style.display = 'none';
                 if (errorBanner) errorBanner.style.display = 'none';
             });
         }
 
         if (btnBackToSignIn) {
-            btnBackToSignIn.addEventListener('click', () => {
-                if (tabSignIn) tabSignIn.click();
+            btnBackToSignIn.addEventListener('click', returnToSignIn);
+        }
+
+        if (btnForgotPassword) {
+            btnForgotPassword.addEventListener('click', async () => {
+                this.isResettingPassword = true;
+                if (form) form.style.display = 'none';
+                if (comingSoonBox) comingSoonBox.style.display = 'none';
+                if (forgotPasswordBox) forgotPasswordBox.style.display = 'flex';
+                if (tabSignIn) tabSignIn.classList.remove('active');
+                if (tabRegister) tabRegister.classList.remove('active');
+                if (resetErrorBanner) resetErrorBanner.style.display = 'none';
+                if (resetSuccessBanner) resetSuccessBanner.style.display = 'none';
+
+                // Pre-fill email if user already entered it in sign-in form
+                const typedEmail = document.getElementById('authEmail')?.value.trim();
+                if (typedEmail && resetEmailInput) {
+                    resetEmailInput.value = typedEmail;
+                }
+                if (resetEmailInput) resetEmailInput.focus();
+
+                // Explicitly purge any lingering user session so the user is strictly logged out
+                if (window.FirebaseBridge) {
+                    try {
+                        await window.FirebaseBridge.signOutUser();
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+            });
+        }
+
+        if (btnBackFromReset) {
+            btnBackFromReset.addEventListener('click', returnToSignIn);
+        }
+
+        if (forgotPasswordForm) {
+            forgotPasswordForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this.isResettingPassword = true;
+
+                const email = resetEmailInput ? resetEmailInput.value.trim() : '';
+                if (!email) return;
+
+                const spinner = document.getElementById('resetSubmitSpinner');
+                const submitBtn = document.getElementById('btnSubmitReset');
+
+                if (spinner) spinner.style.display = 'inline-block';
+                if (submitBtn) submitBtn.disabled = true;
+                if (resetErrorBanner) resetErrorBanner.style.display = 'none';
+                if (resetSuccessBanner) resetSuccessBanner.style.display = 'none';
+
+                try {
+                    const bridge = window.FirebaseBridge;
+                    if (!bridge) throw new Error("Firebase is connecting. Please retry in a moment.");
+
+                    // Purge any active auth session before and after reset dispatch
+                    await bridge.signOutUser().catch(() => {});
+
+                    const res = await bridge.resetPassword(email);
+
+                    // Re-enforce signed out status
+                    await bridge.signOutUser().catch(() => {});
+
+                    if (res.success) {
+                        if (resetSuccessBanner) {
+                            resetSuccessBanner.innerHTML = `
+                                <div style="display: flex; flex-direction: column; gap: 10px;">
+                                    <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                        <i class="fa-solid fa-circle-check" style="font-size: 1.1rem; color: #16a34a; margin-top: 2px;"></i>
+                                        <div>
+                                            <strong>Password Reset Link Sent!</strong>
+                                            <div style="font-size: 0.78rem; margin-top: 4px; color: #166534; line-height: 1.45;">
+                                                We've sent a secure reset link to <strong>${email}</strong>.<br>
+                                                Please check your email, complete password reset, then return to sign in with your new password.
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <button type="button" class="btn-submit" id="btnResetDoneSignIn" style="margin-top: 4px; padding: 10px; font-size: 0.84rem; background: var(--accent-indigo); width: 100%;">
+                                        <i class="fa-solid fa-arrow-right-to-bracket"></i> Return to Faculty Sign In
+                                    </button>
+                                </div>
+                            `;
+                            resetSuccessBanner.style.display = 'block';
+
+                            const doneBtn = document.getElementById('btnResetDoneSignIn');
+                            if (doneBtn) {
+                                doneBtn.addEventListener('click', returnToSignIn);
+                            }
+                        }
+                        this.showToast("Password reset link dispatched to your email!", "success");
+                    } else {
+                        let msg = res.error || "Unable to send password reset email.";
+                        if (res.code === "auth/user-not-found") {
+                            msg = "No registered faculty account found with this institutional email address.";
+                        } else if (res.code === "auth/invalid-email") {
+                            msg = "Please enter a valid email address.";
+                        } else if (res.code === "auth/too-many-requests") {
+                            msg = "Too many attempts. Please wait a few moments before trying again.";
+                        }
+                        if (resetErrorBanner) {
+                            resetErrorBanner.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${msg}`;
+                            resetErrorBanner.style.display = 'block';
+                        }
+                    }
+                } catch (err) {
+                    if (resetErrorBanner) {
+                        resetErrorBanner.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${err.message}`;
+                        resetErrorBanner.style.display = 'block';
+                    }
+                } finally {
+                    if (spinner) spinner.style.display = 'none';
+                    if (submitBtn) submitBtn.disabled = false;
+
+                    // Hard security guarantee: ensure dashboard remains hidden
+                    const dashboard = document.getElementById('dashboardArea');
+                    const gateway = document.getElementById('authGateway');
+                    if (dashboard) dashboard.style.display = 'none';
+                    if (gateway) gateway.style.display = 'flex';
+                }
             });
         }
 
@@ -250,6 +386,15 @@ const App = {
         const dashboard = document.getElementById('dashboardArea');
         const badge = document.getElementById('userAuthBadge');
         const emailSpan = document.getElementById('userEmailSpan');
+
+        // Security check: if the user is in the middle of password reset, never show dashboard
+        if (this.isResettingPassword) {
+            console.log("[Auth Gateway] In password reset mode - suppressing dashboard access.");
+            if (dashboard) dashboard.style.display = 'none';
+            if (gateway) gateway.style.display = 'flex';
+            if (badge) badge.style.display = 'none';
+            return;
+        }
 
         if (user) {
             console.log("Authenticated as:", user.email);

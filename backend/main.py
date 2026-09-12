@@ -221,10 +221,13 @@ if os.path.exists(FRONTEND_DIR):
     app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
     css_path = os.path.join(FRONTEND_DIR, "css")
     js_path = os.path.join(FRONTEND_DIR, "js")
+    assets_path = os.path.join(FRONTEND_DIR, "assets")
     if os.path.exists(css_path):
         app.mount("/css", StaticFiles(directory=css_path), name="css")
     if os.path.exists(js_path):
         app.mount("/js", StaticFiles(directory=js_path), name="js")
+    if os.path.exists(assets_path):
+        app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
 
 if os.path.exists(FACES_DIR):
     app.mount("/faces", StaticFiles(directory=FACES_DIR), name="faces")

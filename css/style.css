@@ -978,18 +978,57 @@ body {
     justify-content: center;
     padding: 36px 20px;
     overflow-y: auto;
-    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    position: relative;
+    background-color: #f1f5f9;
+}
+
+.auth-gateway::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: 
+        linear-gradient(135deg, rgba(248, 250, 252, 0.84) 0%, rgba(241, 245, 249, 0.88) 50%, rgba(224, 231, 255, 0.80) 100%),
+        url('../assets/campus_bg.jpg');
+    background-size: cover;
+    background-position: center 30%;
+    background-repeat: no-repeat;
+    pointer-events: none;
+    z-index: 0;
+    filter: saturate(0.9);
 }
 
 .auth-gateway-card {
+    position: relative;
+    z-index: 1;
     width: 100%;
     max-width: 480px;
-    background: #ffffff;
-    border: 1px solid var(--border-color);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.85);
     border-radius: var(--radius-lg);
     padding: 38px 34px;
-    box-shadow: var(--shadow-xl);
+    box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(226, 232, 240, 0.8);
     animation: fadeInScale 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.auth-gate-footer {
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-color);
+    text-align: center;
+}
+
+.auth-gate-lock-info {
+    font-size: 0.73rem;
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.auth-gate-lock-info i {
+    color: var(--accent-indigo);
 }
 
 @keyframes fadeInScale {
@@ -1343,6 +1382,32 @@ body {
     display: block;
 }
 
+.auth-aux-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: -6px;
+    margin-bottom: 2px;
+}
+
+.btn-link {
+    background: transparent;
+    border: none;
+    color: var(--accent-indigo);
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0;
+    transition: color 0.2s;
+}
+
+.btn-link:hover {
+    color: #3730a3;
+    text-decoration: underline;
+}
+
 .auth-error-banner {
     padding: 10px 14px;
     background: #fef2f2;
@@ -1352,6 +1417,27 @@ body {
     font-size: 0.8rem;
     line-height: 1.4;
     font-weight: 500;
+}
+
+.auth-success-banner {
+    padding: 12px 14px;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: var(--radius-sm);
+    color: #15803d;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    font-weight: 600;
+    text-align: left;
+}
+
+.forgot-password-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 10px 4px 6px 4px;
+    animation: fadeInScale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-auth-submit {

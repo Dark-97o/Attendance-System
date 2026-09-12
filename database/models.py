@@ -26,13 +26,20 @@ class DatabaseManager:
 
     # --- TEACHER OPERATIONS ---
 
-    def register_teacher(self, teacher_id: str, name: str, department: str, fingerprint_id: int) -> bool:
+    def register_teacher(self, teacher_id: str, name: str, department: str, fingerprint_id: int = 1, photo_path: Optional[str] = None) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                INSERT OR REPLACE INTO teachers (teacher_id, name, department, fingerprint_id)
-                VALUES (?, ?, ?, ?)
-            """, (teacher_id, name, department, fingerprint_id))
+                INSERT OR REPLACE INTO teachers (teacher_id, name, department, fingerprint_id, photo_path)
+                VALUES (?, ?, ?, ?, ?)
+            """, (teacher_id, name, department, fingerprint_id, photo_path))
+            conn.commit()
+            return True
+
+    def delete_teacher(self, teacher_id: str) -> bool:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM teachers WHERE teacher_id = ?", (teacher_id,))
             conn.commit()
             return True
 

@@ -12,7 +12,8 @@ import {
     createUserWithEmailAndPassword, 
     signOut, 
     onAuthStateChanged,
-    updateProfile
+    updateProfile,
+    sendPasswordResetEmail
 } from "https://www.gstatic.com/firebasejs/11.4.0/firebase-auth.js";
 import { 
     getFirestore, 
@@ -79,6 +80,17 @@ const FirebaseBridge = {
         } catch (error) {
             console.error("Firebase Auth SignOut Error:", error);
             return { success: false, error: error.message };
+        }
+    },
+
+    async resetPassword(email) {
+        try {
+            await sendPasswordResetEmail(auth, email);
+            console.log(`[Firebase Auth] Password reset email sent to: ${email}`);
+            return { success: true };
+        } catch (error) {
+            console.error("Firebase Password Reset Error:", error);
+            return { success: false, error: error.message, code: error.code };
         }
     },
 

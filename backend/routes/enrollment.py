@@ -28,7 +28,7 @@ class RegisterTeacherRequest(BaseModel):
     teacher_id: str
     name: str
     department: str
-    fingerprint_id: int
+    fingerprint_id: Optional[int] = 1
 
 @router.get("/students")
 def list_students():
@@ -46,6 +46,12 @@ def list_students():
 def list_teachers():
     ctx = get_context()
     teachers = ctx["db"].list_teachers()
+    for t in teachers:
+        if t.get("photo_path"):
+            filename = os.path.basename(t["photo_path"])
+            t["photo_url"] = f"/faces/{filename}"
+        else:
+            t["photo_url"] = None
     return {"teachers": teachers, "total": len(teachers)}
 
 @router.post("/student")
@@ -73,25 +79,41 @@ def register_teacher(req: RegisterTeacherRequest):
         teacher_id=req.teacher_id,
         name=req.name,
         department=req.department,
-        fingerprint_id=req.fingerprint_id
+        fingerprint_id=req.fingerprint_id or 1
     )
 
     # Enroll in sensor if hardware present
-    enroll_success, enroll_msg = fp_mgr.enroll_teacher_fingerprint(req.teacher_id, req.fingerprint_id)
+    enroll_success, enroll_msg = fp_mgr.enroll_teacher_fingerprint(req.teacher_id, req.fingerprint_id or 1)
     return {
-        "message": f"Faculty {req.name} registered",
+        "success": True,
+        "message": f"Faculty {req.name} registered successfully",
         "fingerprint_status": enroll_msg
     }
 
+@router.delete("/teacher/{teacher_id}")
+def delete_teacher(teacher_id: str):
+    """Deletes a registered teacher/faculty member."""
+    ctx = get_context()
+    db = ctx["db"]
+    face_eng = ctx.get("face_engine")
+
+    success = db.delete_teacher(teacher_id)
+    if face_eng:
+        face_eng.refresh_enrolled_cache()
+    return {"success": success, "message": f"Faculty {teacher_id} removed"}
+
 @router.post("/face")
 async def enroll_face_from_upload(
-    student_id: str = Form(...),
+    student_id: Optional[str] = Form(None),
+    teacher_id: Optional[str] = Form(None),
+    entity_type: Optional[str] = Form("student"),
     name: Optional[str] = Form(None),
     roll_number: Optional[str] = Form(None),
     class_section: Optional[str] = Form(None),
+    department: Optional[str] = Form(None),
     file: UploadFile = File(...)
 ):
-    """Enrolls face from an uploaded photo (JPG/PNG)."""
+    """Enrolls face for either a student or teacher from an uploaded photo (JPG/PNG)."""
     ctx = get_context()
     face_eng = ctx["face_engine"]
     db = ctx["db"]
@@ -103,30 +125,35 @@ async def enroll_face_from_upload(
     if img_bgr is None:
         raise HTTPException(status_code=400, detail="Invalid image file")
 
-    # Ensure student profile exists or update with provided details
-    student_name = name or f"Student {student_id}"
-    student_roll = roll_number or student_id
-    student_sec = class_section or "Active"
-    db.register_student(
-        student_id=student_id,
-        name=student_name,
-        roll_number=student_roll,
-        class_section=student_sec
-    )
-
-    # Save photo to data/faces directory
     faces_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "faces")
     os.makedirs(faces_dir, exist_ok=True)
-    photo_filename = f"{student_id}_{int(time.time())}.jpg"
-    photo_path = os.path.join(faces_dir, photo_filename)
-    cv2.imwrite(photo_path, img_bgr)
 
-    # Update student photo path
-    with db._get_conn() as conn:
-        conn.cursor().execute("UPDATE students SET photo_path = ? WHERE student_id = ?", (photo_path, student_id))
-        conn.commit()
+    is_teacher = (entity_type == "teacher") or bool(teacher_id)
+    if is_teacher:
+        tid = teacher_id or student_id or f"T_{int(time.time())}"
+        tname = name or f"Faculty {tid}"
+        tdept = department or "CSE"
+        photo_filename = f"teacher_{tid}_{int(time.time())}.jpg"
+        photo_path = os.path.join(faces_dir, photo_filename)
+        cv2.imwrite(photo_path, img_bgr)
 
-    success, msg = face_eng.enroll_face_image(student_id, img_bgr)
+        db.register_teacher(teacher_id=tid, name=tname, department=tdept, photo_path=photo_path)
+        success, msg = face_eng.enroll_face_image(tid, img_bgr)
+        identifier = tid
+        display_name = tname
+    else:
+        sid = student_id or f"S_{int(time.time())}"
+        sname = name or f"Student {sid}"
+        sroll = roll_number or sid
+        ssec = class_section or "CSE A"
+        photo_filename = f"{sid}_{int(time.time())}.jpg"
+        photo_path = os.path.join(faces_dir, photo_filename)
+        cv2.imwrite(photo_path, img_bgr)
+
+        db.register_student(student_id=sid, name=sname, roll_number=sroll, class_section=ssec, photo_path=photo_path)
+        success, msg = face_eng.enroll_face_image(sid, img_bgr)
+        identifier = sid
+        display_name = sname
 
     # Generate preview base64
     ret_enc, buf = cv2.imencode(".jpg", img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 85])
@@ -134,9 +161,75 @@ async def enroll_face_from_upload(
 
     return {
         "success": success,
-        "message": f"Successfully enrolled face for {student_name}!",
-        "student_id": student_id,
+        "message": f"Successfully enrolled face for {display_name}!",
+        "id": identifier,
+        "student_id": identifier,
+        "name": display_name,
         "photo_preview": f"data:image/jpeg;base64,{b64_str}" if b64_str else None
+    }
+
+@router.post("/snap")
+def snap_and_enroll(payload: Dict[str, Any]):
+    """Captures current frame from camera stream and enrolls face for student or teacher."""
+    ctx = get_context()
+    cam = ctx["camera"]
+    face_eng = ctx["face_engine"]
+    db = ctx["db"]
+
+    ret, frame = cam.read()
+    if not ret or frame is None:
+        raise HTTPException(status_code=500, detail="Could not capture frame from optical camera")
+
+    is_teacher = payload.get("entity_type") == "teacher" or "teacher_id" in payload
+    faces_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "faces")
+    os.makedirs(faces_dir, exist_ok=True)
+
+    if is_teacher:
+        tid = payload.get("teacher_id") or payload.get("id") or f"T_{int(time.time())}"
+        tname = payload.get("name") or f"Faculty {tid}"
+        tdept = payload.get("department") or "CSE"
+        slot = int(payload.get("fingerprint_id", 1))
+
+        photo_filename = f"teacher_{tid}_{int(time.time())}.jpg"
+        photo_path = os.path.join(faces_dir, photo_filename)
+        cv2.imwrite(photo_path, frame)
+
+        db.register_teacher(teacher_id=tid, name=tname, department=tdept, fingerprint_id=slot, photo_path=photo_path)
+        success, msg = face_eng.enroll_face_image(tid, frame)
+        identifier = tid
+        display_name = tname
+    else:
+        sid = payload.get("student_id") or payload.get("id") or f"S_{int(time.time())}"
+        sname = payload.get("name") or f"Student {sid}"
+        sroll = payload.get("roll_number") or sid
+        ssec = payload.get("class_section") or "CSE A"
+
+        photo_filename = f"{sid}_{int(time.time())}.jpg"
+        photo_path = os.path.join(faces_dir, photo_filename)
+        cv2.imwrite(photo_path, frame)
+
+        db.register_student(student_id=sid, name=sname, roll_number=sroll, class_section=ssec, photo_path=photo_path)
+        success, msg = face_eng.enroll_face_image(sid, frame)
+        identifier = sid
+        display_name = sname
+
+    preview_img = np.ascontiguousarray(frame.copy())
+    faces = face_eng.detect_faces(preview_img)
+    for (fx, fy, fw, fh) in faces:
+        cv2.rectangle(preview_img, (fx, fy), (fx + fw, fy + fh), (16, 185, 129), 2)
+        cv2.putText(preview_img, f"Captured: {display_name}", (fx, fy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (16, 185, 129), 1)
+
+    ret_enc, buf = cv2.imencode(".jpg", preview_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    b64_str = base64.b64encode(buf).decode("utf-8") if ret_enc else ""
+
+    return {
+        "success": success,
+        "message": f"Successfully enrolled face for {display_name}!",
+        "id": identifier,
+        "student_id": identifier,
+        "name": display_name,
+        "photo_preview": f"data:image/jpeg;base64,{b64_str}" if b64_str else None,
+        "faces_detected": len(faces)
     }
 
 @router.post("/face/live-capture")
@@ -146,62 +239,13 @@ def enroll_face_from_live_camera(
     roll_number: Optional[str] = Form(None),
     class_section: Optional[str] = Form(None)
 ):
-    """Captures the current frame from the camera stream, saves it, and enrolls the student face."""
-    ctx = get_context()
-    cam = ctx["camera"]
-    face_eng = ctx["face_engine"]
-    db = ctx["db"]
-
-    # 1. Grab camera frame
-    ret, frame = cam.read()
-    if not ret or frame is None:
-        raise HTTPException(status_code=500, detail="Could not capture frame from optical camera")
-
-    # 2. Register / update student record
-    student_name = name or f"Student {student_id}"
-    student_roll = roll_number or student_id
-    student_sec = class_section or "Active"
-    db.register_student(
-        student_id=student_id,
-        name=student_name,
-        roll_number=student_roll,
-        class_section=student_sec
-    )
-
-    # 3. Save photo to data/faces directory
-    faces_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "faces")
-    os.makedirs(faces_dir, exist_ok=True)
-    photo_filename = f"{student_id}_{int(time.time())}.jpg"
-    photo_path = os.path.join(faces_dir, photo_filename)
-    cv2.imwrite(photo_path, frame)
-
-    # 4. Update student photo path
-    with db._get_conn() as conn:
-        conn.cursor().execute("UPDATE students SET photo_path = ? WHERE student_id = ?", (photo_path, student_id))
-        conn.commit()
-
-    # 5. Enroll face embedding into engine
-    success, msg = face_eng.enroll_face_image(student_id, frame)
-
-    # 6. Generate preview thumbnail with face box
-    preview_img = np.ascontiguousarray(frame.copy())
-    faces = face_eng.detect_faces(preview_img)
-    for (fx, fy, fw, fh) in faces:
-        cv2.rectangle(preview_img, (fx, fy), (fx + fw, fy + fh), (0, 240, 255), 2)
-        cv2.putText(preview_img, f"Captured: {student_name}", (fx, fy - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 240, 255), 1)
-
-    ret_enc, buf = cv2.imencode(".jpg", preview_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-    b64_str = base64.b64encode(buf).decode("utf-8") if ret_enc else ""
-
-    return {
-        "success": success,
-        "message": f"Successfully enrolled face for {student_name}!",
+    """Legacy endpoint supporting form-data live-capture."""
+    return snap_and_enroll({
         "student_id": student_id,
-        "name": student_name,
-        "roll_number": student_roll,
-        "photo_preview": f"data:image/jpeg;base64,{b64_str}" if b64_str else None,
-        "faces_detected": len(faces)
-    }
+        "name": name,
+        "roll_number": roll_number,
+        "class_section": class_section
+    })
 
 @router.delete("/student/{student_id}")
 def delete_student(student_id: str):

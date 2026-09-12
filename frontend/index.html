@@ -86,6 +86,12 @@
                         </div>
                     </div>
 
+                    <div class="auth-aux-row">
+                        <button type="button" class="btn-link" id="btnForgotPassword">
+                            <i class="fa-solid fa-key"></i> Forgot Password?
+                        </button>
+                    </div>
+
                     <div class="auth-error-banner" id="authErrorBanner" style="display: none;"></div>
 
                     <button type="submit" class="btn-auth-submit" id="btnAuthSubmit">
@@ -121,6 +127,38 @@
                     <button type="button" class="btn-back-signin" id="btnBackToSignIn">
                         <i class="fa-solid fa-arrow-left"></i> Return to Faculty Sign In
                     </button>
+                </div>
+
+                <!-- Forgot Password Box -->
+                <div class="forgot-password-box" id="forgotPasswordBox" style="display: none;">
+                    <div class="coming-soon-icon" style="background: #e0e7ff; color: #4338ca; border-color: #c7d2fe;">
+                        <i class="fa-solid fa-envelope-open-text"></i>
+                    </div>
+                    <h3 class="coming-soon-title">Reset Your Password</h3>
+                    <p class="coming-soon-desc" style="margin-bottom: 16px;">
+                        Enter your registered faculty email address and we'll send you an official password reset link.
+                    </p>
+                    <form id="forgotPasswordForm" class="auth-form" style="width: 100%;">
+                        <div class="form-group" style="text-align: left;">
+                            <label for="resetEmail">Registered Institutional Email</label>
+                            <div class="input-icon-group">
+                                <i class="fa-solid fa-envelope input-icon"></i>
+                                <input type="email" id="resetEmail" required placeholder="faculty@campus.edu" autocomplete="email">
+                            </div>
+                        </div>
+
+                        <div class="auth-error-banner" id="resetErrorBanner" style="display: none;"></div>
+                        <div class="auth-success-banner" id="resetSuccessBanner" style="display: none;"></div>
+
+                        <button type="submit" class="btn-auth-submit" id="btnSubmitReset">
+                            <span id="resetSubmitSpinner" class="spinner-inline" style="display: none;"></span>
+                            <span id="resetSubmitText"><i class="fa-solid fa-paper-plane"></i> Send Reset Link</span>
+                        </button>
+
+                        <button type="button" class="btn-back-signin" id="btnBackFromReset" style="margin-top: 4px;">
+                            <i class="fa-solid fa-arrow-left"></i> Return to Faculty Sign In
+                        </button>
+                    </form>
                 </div>
 
                 <div class="auth-gate-footer">

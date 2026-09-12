@@ -31,9 +31,14 @@ def init_db(db_path: str = DB_PATH) -> None:
         department TEXT NOT NULL,
         fingerprint_id INTEGER UNIQUE,
         rfid_card TEXT,
+        photo_path TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """)
+    try:
+        cursor.execute("ALTER TABLE teachers ADD COLUMN photo_path TEXT;")
+    except Exception:
+        pass
 
     # Students table
     cursor.execute("""
