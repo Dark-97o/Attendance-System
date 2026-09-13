@@ -114,3 +114,15 @@ Open your browser at:
 - **[PATENT_SPECIFICATION.md](docs/PATENT_SPECIFICATION.md)**: Full patent application draft including Field of Invention, Prior Art Limitations, Detailed Embodiments, and 10 Formal Claims.
 - **[RESEARCH_PAPER.md](docs/RESEARCH_PAPER.md)**: Academic paper draft with mathematical formulations for CIELAB CLAHE, cosine metric, spatial IoU, and physical Raspberry Pi 5 benchmark tables.
 - **[HARDWARE_SCHEMATIC.md](docs/HARDWARE_SCHEMATIC.md)**: Complete wiring pinout table (Pi 5 GPIO to R307 JST connector) and Raspberry Pi OS UART configuration.
+
+
+---
+
+## 🧠 SFace Deep Neural Face Recognition Upgrade
+In addition to traditional Haar/YuNet detection, the system now integrates the OpenCV **SFace (ResNet-based 128D)** deep neural network (`face_recognition_sface_2021dec.onnx`):
+- **Affine Landmark Alignment:** High-precision facial alignment using 5 facial landmarks (eyes, nose, mouth corners) before feature extraction.
+- **128D Cosine Similarity Metric:** Strict thresholding (0.363 cosine distance / 0.637 similarity) eliminating false positives and identity misattributions.
+- **Hardware DirectShow Device Enumeration:** Auto-discovery of edge and external webcams with real-time switching on the live monitor.
+- **Department Specialization:** Configured for streamlined CSE and ECE departmental monitoring.
+- **Retake Attendance & Reset:** Session-level and daily attendance record flushing with camera tracking debounce reset.
+- **Automated Summary Dispatch:** Direct EmailJS integration for instantaneous lecture attendance reports.
