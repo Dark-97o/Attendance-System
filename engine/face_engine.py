@@ -20,7 +20,7 @@ logger = logging.getLogger("attendance.face_engine")
 class FaceEngine:
     """Core Face Recognition Engine optimized for ARM Cortex-A76 (Raspberry Pi 5)."""
 
-    def __init__(self, db: DatabaseManager, similarity_threshold: float = 0.65, frame_skip: int = 1):
+    def __init__(self, db: DatabaseManager, similarity_threshold: float = 0.48, frame_skip: int = 1):
         self.db = db
         self.similarity_threshold = similarity_threshold
         self.frame_skip = frame_skip
@@ -49,7 +49,6 @@ class FaceEngine:
         self.detector_lock = threading.Lock()
 
         # Initialize YuNet Deep Neural Network Face Detector (High accuracy under backlight/angles)
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         yunet_path = os.path.join(base_dir, "models", "yunet.onnx")
         self.yunet = None
         if os.path.exists(yunet_path) and hasattr(cv2, 'FaceDetectorYN'):
@@ -59,6 +58,16 @@ class FaceEngine:
             except Exception as ye:
                 logger.warning(f"Could not load YuNet detector: {ye}")
 
+        # Initialize SFace Deep Learning Face Recognition Engine (128-D Deep Feature Embeddings)
+        sface_path = os.path.join(base_dir, "models", "face_recognition_sface_2021dec.onnx")
+        self.sface = None
+        if os.path.exists(sface_path) and hasattr(cv2, 'FaceRecognizerSF'):
+            try:
+                self.sface = cv2.FaceRecognizerSF.create(sface_path, "")
+                logger.info("Initialized SFace Deep Neural Network Face Recognition Engine (128-D)")
+            except Exception as se:
+                logger.warning(f"Could not load SFace model: {se}")
+
         # In-memory enrolled face vectors cache: {student_id: [vector_1, vector_2, ...]}
         self.enrolled_cache: Dict[str, List[np.ndarray]] = {}
         self.student_metadata: Dict[str, Dict[str, Any]] = {}
@@ -67,10 +76,10 @@ class FaceEngine:
         # Cached detections between frames for smooth display
         self.last_tracked_faces: List[TrackedFace] = []
 
-    def detect_faces(self, image_bgr: np.ndarray) -> List[Tuple[int, int, int, int]]:
+    def detect_faces_and_landmarks(self, image_bgr: np.ndarray) -> List[Tuple[Tuple[int, int, int, int], Any]]:
         """
-        Thread-safe face detection using YuNet Deep Neural Network (with Haar Cascade fallback).
-        Returns a list of (x, y, w, h) bounding boxes.
+        Thread-safe face detection with landmarks using YuNet (with Haar Cascade fallback).
+        Returns list of ((x, y, w, h), raw_face_record).
         """
         with self.detector_lock:
             img = np.ascontiguousarray(image_bgr)
@@ -82,7 +91,7 @@ class FaceEngine:
                     self.yunet.setInputSize((w, h))
                     _, faces = self.yunet.detect(img)
                     if faces is not None and len(faces) > 0:
-                        boxes = []
+                        results = []
                         for f in faces:
                             bx, by, bw, bh = int(f[0]), int(f[1]), int(f[2]), int(f[3])
                             bx = max(0, bx)
@@ -90,25 +99,27 @@ class FaceEngine:
                             bw = min(bw, w - bx)
                             bh = min(bh, h - by)
                             if bw >= 24 and bh >= 24:
-                                boxes.append((bx, by, bw, bh))
-                        if len(boxes) > 1:
+                                results.append(((bx, by, bw, bh), f))
+                        if len(results) > 1:
                             kept = []
-                            for b in boxes:
+                            for r in results:
+                                b = r[0]
                                 overlap = False
                                 for k in kept:
-                                    ix = max(b[0], k[0])
-                                    iy = max(b[1], k[1])
-                                    iw = max(0, min(b[0] + b[2], k[0] + k[2]) - ix)
-                                    ih = max(0, min(b[1] + b[3], k[1] + k[3]) - iy)
+                                    kb = k[0]
+                                    ix = max(b[0], kb[0])
+                                    iy = max(b[1], kb[1])
+                                    iw = max(0, min(b[0] + b[2], kb[0] + kb[2]) - ix)
+                                    ih = max(0, min(b[1] + b[3], kb[1] + kb[3]) - iy)
                                     inter = iw * ih
                                     if inter / float(b[2] * b[3] + 1e-6) > 0.35:
                                         overlap = True
                                         break
                                 if not overlap:
-                                    kept.append(b)
-                            boxes = kept
-                        if len(boxes) > 0:
-                            return boxes
+                                    kept.append(r)
+                            results = kept
+                        if len(results) > 0:
+                            return results
                 except Exception as ye:
                     logger.warning(f"YuNet detection warning: {ye}")
 
@@ -117,10 +128,15 @@ class FaceEngine:
                 try:
                     gray = np.ascontiguousarray(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY))
                     haar_faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=3, minSize=(30, 30))
-                    return [(int(x), int(y), int(bw), int(bh)) for (x, y, bw, bh) in haar_faces]
+                    return [((int(x), int(y), int(bw), int(bh)), None) for (x, y, bw, bh) in haar_faces]
                 except Exception as he:
                     logger.warning(f"Haar detection warning: {he}")
             return []
+
+    def detect_faces(self, image_bgr: np.ndarray) -> List[Tuple[int, int, int, int]]:
+        """Compatibility wrapper returning bounding boxes only."""
+        results = self.detect_faces_and_landmarks(image_bgr)
+        return [r[0] for r in results]
 
     def refresh_enrolled_cache(self):
         """Loads all student face embeddings from SQLite into memory for sub-millisecond vector search."""
@@ -148,38 +164,51 @@ class FaceEngine:
 
         logger.info(f"Loaded {len(self.enrolled_cache)} enrolled students with {sum(len(v) for v in self.enrolled_cache.values())} biometric templates")
 
-    def extract_face_embedding(self, face_bgr: np.ndarray) -> np.ndarray:
+    def extract_face_embedding(self, face_bgr: np.ndarray, landmark_face=None, full_image=None) -> np.ndarray:
         """
-        Computes a compact, robust 128-dimensional multi-region spatial gradient embedding.
-        Invariance properties: robust to illumination gradients, minor pose, and scale.
+        Extracts 128-D embedding using deep learning SFace model (with landmark affine alignment).
         """
-        # Resize to standard canonical size 112x112
+        if self.sface is not None:
+            try:
+                if landmark_face is not None and full_image is not None:
+                    aligned = self.sface.alignCrop(full_image, landmark_face)
+                else:
+                    ch, cw = face_bgr.shape[:2]
+                    if self.yunet is not None and ch >= 32 and cw >= 32:
+                        with self.detector_lock:
+                            self.yunet.setInputSize((cw, ch))
+                            _, sub_faces = self.yunet.detect(np.ascontiguousarray(face_bgr))
+                        if sub_faces is not None and len(sub_faces) > 0:
+                            aligned = self.sface.alignCrop(face_bgr, sub_faces[0])
+                        else:
+                            aligned = cv2.resize(face_bgr, (112, 112))
+                    else:
+                        aligned = cv2.resize(face_bgr, (112, 112))
+                feat = self.sface.feature(aligned)
+                vec = feat[0].astype(np.float32)
+                norm = np.linalg.norm(vec)
+                if norm > 1e-6:
+                    return vec / norm
+            except Exception as se:
+                logger.warning(f"SFace feature extraction note: {se}")
+
+        # Fallback: multi-region gradient descriptor
         face_norm = cv2.resize(face_bgr, (112, 112))
         gray = cv2.cvtColor(face_norm, cv2.COLOR_BGR2GRAY)
-        
-        # Apply local contrast normalization
         gray = cv2.equalizeHist(gray)
-
-        # Divide into 4x4 spatial blocks (16 cells)
         cells_x, cells_y = 4, 4
         h, w = gray.shape
         cell_h, cell_w = h // cells_y, w // cells_x
-
-        # Compute Sobel gradients in X and Y
         sobel_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
         sobel_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
         magnitude, angle = cv2.cartToPolar(sobel_x, sobel_y, angleInDegrees=True)
-
         features = []
         for i in range(cells_y):
             for j in range(cells_x):
                 cell_mag = magnitude[i * cell_h:(i + 1) * cell_h, j * cell_w:(j + 1) * cell_w]
                 cell_ang = angle[i * cell_h:(i + 1) * cell_h, j * cell_w:(j + 1) * cell_w]
-                
-                # 8-bin orientation histogram per cell -> 16 * 8 = 128 dimensions
                 hist, _ = np.histogram(cell_ang, bins=8, range=(0, 360), weights=cell_mag)
                 features.extend(hist)
-
         vec = np.array(features, dtype=np.float32)
         norm = np.linalg.norm(vec)
         if norm > 1e-6:
@@ -188,26 +217,32 @@ class FaceEngine:
 
     def identify_face(self, face_embedding: np.ndarray) -> Tuple[Optional[str], float, Optional[Dict[str, Any]]]:
         """
-        Searches the in-memory enrolled vector database using Cosine Similarity.
+        Searches the in-memory enrolled vector database using Cosine Similarity with margin gating.
+        Prevents misidentification: the top match must exceed similarity threshold AND
+        have a clear margin over any second-best match.
         Returns (student_id, confidence, metadata_dict)
         """
         if not self.enrolled_cache:
             return None, 0.0, None
 
-        best_sid = None
-        best_score = -1.0
-
+        scores = []
         for sid, templates in self.enrolled_cache.items():
+            best_tmpl_sim = -1.0
             for tmpl in templates:
-                # Cosine similarity between unit normalized vectors is their dot product
                 sim = float(np.dot(face_embedding, tmpl))
-                if sim > best_score:
-                    best_score = sim
-                    best_sid = sid
+                if sim > best_tmpl_sim:
+                    best_tmpl_sim = sim
+            scores.append((sid, best_tmpl_sim))
 
-        if best_score >= self.similarity_threshold and best_sid:
+        scores.sort(key=lambda x: x[1], reverse=True)
+        best_sid, best_score = scores[0]
+        second_score = scores[1][1] if len(scores) > 1 else -1.0
+
+        # Margin check: top candidate must be separated from runner-up by >= 0.04
+        margin = (best_score - second_score) if len(scores) > 1 else 1.0
+        if best_score >= self.similarity_threshold and margin >= 0.04 and best_sid:
             return best_sid, round(best_score, 3), self.student_metadata.get(best_sid)
-        
+
         return None, round(best_score, 3), None
 
     def process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, List[Dict[str, Any]], dict]:
@@ -233,15 +268,15 @@ class FaceEngine:
         recognized_students = []
 
         if should_run_detection:
-            boxes = self.detect_faces(enhanced_frame)
-            for (x, y, bw, bh) in boxes:
-                # Crop face
+            face_items = self.detect_faces_and_landmarks(enhanced_frame)
+            for (bbox, landmark_data) in face_items:
+                x, y, bw, bh = bbox
                 face_crop = enhanced_frame[y:y + bh, x:x + bw]
                 if face_crop.size == 0:
                     continue
 
-                # Extract 128D embedding
-                emb = self.extract_face_embedding(face_crop)
+                # Extract SFace 128D deep embedding
+                emb = self.extract_face_embedding(face_crop, landmark_face=landmark_data, full_image=enhanced_frame)
                 sid, conf, meta = self.identify_face(emb)
 
                 detected_faces.append({
@@ -329,20 +364,37 @@ class FaceEngine:
         cv2.putText(img, label, (x + 6, banner_y + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
     def enroll_face_image(self, student_id: str, image_bgr: np.ndarray) -> Tuple[bool, str]:
-        """Detects face in provided image and stores embedding into database."""
+        """Detects face in provided image, aligns facial landmarks, and stores SFace deep embedding into database."""
         image_bgr = np.ascontiguousarray(image_bgr)
-        boxes = self.detect_faces(image_bgr)
+        h, w = image_bgr.shape[:2]
 
-        if len(boxes) == 0:
-            # If detector misses under extreme angles, use center crop fallback
-            h, w = image_bgr.shape[:2]
-            crop = image_bgr[h//6:5*h//6, w//6:5*w//6]
-        else:
-            # Take largest detected face
-            fx, fy, fw, fh = max(boxes, key=lambda b: b[2] * b[3])
-            crop = image_bgr[fy:fy + fh, fx:fx + fw]
+        emb = None
+        # 1. Primary: YuNet landmark detection + SFace alignment
+        if self.yunet is not None and self.sface is not None:
+            with self.detector_lock:
+                try:
+                    self.yunet.setInputSize((w, h))
+                    _, raw_faces = self.yunet.detect(image_bgr)
+                    if raw_faces is not None and len(raw_faces) > 0:
+                        best_face = max(raw_faces, key=lambda b: float(b[2] * b[3]))
+                        aligned = self.sface.alignCrop(image_bgr, best_face)
+                        feat = self.sface.feature(aligned)[0].astype(np.float32)
+                        norm = np.linalg.norm(feat)
+                        if norm > 1e-6:
+                            emb = (feat / norm).tolist()
+                except Exception as ye:
+                    logger.warning(f"YuNet landmark enrollment warning: {ye}")
 
-        emb = self.extract_face_embedding(crop).tolist()
+        # 2. Fallback if YuNet landmark missing
+        if emb is None:
+            boxes = self.detect_faces(image_bgr)
+            if len(boxes) == 0:
+                crop = image_bgr[h//6:5*h//6, w//6:5*w//6]
+            else:
+                fx, fy, fw, fh = max(boxes, key=lambda b: b[2] * b[3])
+                crop = image_bgr[fy:fy + fh, fx:fx + fw]
+            emb = self.extract_face_embedding(crop).tolist()
+
         self.db.add_face_embedding(student_id, emb)
         self.refresh_enrolled_cache()
         return True, f"Face embedding enrolled for {student_id}"
