@@ -14,6 +14,10 @@ const App = {
     useWebcam: false,
     enrollWebcamStream: null,
     useEnrollWebcam: false,
+    activeCameraKey: 'edge-0',
+    availableCameras: [],
+    edgeCameras: [],
+    browserWebcams: [],
     enrollMode: 'student',
     isResettingPassword: false,
     selectedClassFilter: 'ALL',
@@ -21,6 +25,8 @@ const App = {
     cachedTeachersList: [],
     timetableRoutines: [],
     timetableMonitorInterval: null,
+    lastAuthUserId: undefined,
+    _feedRetryTimer: null,
     emailjsConfig: {
         serviceId: '',
         templateId: '',
@@ -39,10 +45,19 @@ const App = {
 
     init() {
         console.log("Initializing AI Attendance System Dashboard (Production Mode)...");
+        // Fast-path immediate session restoration to prevent login/dashboard flicker
+        try {
+            const cachedUser = localStorage.getItem('attendance_auth_user');
+            if (cachedUser) {
+                this.updateAuthUI(JSON.parse(cachedUser));
+            }
+        } catch (e) {}
+
         this.bindEvents();
         this.initClock();
         this.initFirebaseAuth();
         this.initVideoFeedWatchdog();
+        this.initCameraControls();
         this.initClassFilters();
         this.initTimetableMonitor();
         this.initEmailJS();
@@ -62,6 +77,12 @@ const App = {
         const toggleBtn = document.getElementById('btnToggleSession');
         if (toggleBtn) {
             toggleBtn.addEventListener('click', () => this.toggleLectureSession());
+        }
+
+        // Reset and Retake Attendance
+        const resetBtn = document.getElementById('btnResetAttendance');
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => this.resetAttendance());
         }
 
         // Enrollment Mode Switcher (Student vs Teacher vs Timetable)
@@ -113,30 +134,6 @@ const App = {
             }
         }
 
-        // Desired Camera Switcher Dropdown in Enrollment Studio
-        const enrollCameraSelect = document.getElementById('enrollCameraSelect');
-        if (enrollCameraSelect) {
-            enrollCameraSelect.addEventListener('change', (e) => {
-                const selected = e.target.value;
-                this.switchEnrollCamera(selected);
-            });
-        }
-
-        const btnEnrollToggleCam = document.getElementById('btnEnrollToggleCam');
-        if (btnEnrollToggleCam) {
-            btnEnrollToggleCam.addEventListener('click', () => {
-                if (!enrollCameraSelect) {
-                    this.toggleCameraSource();
-                    return;
-                }
-                const opts = Array.from(enrollCameraSelect.options).map(o => o.value);
-                const curIdx = opts.indexOf(enrollCameraSelect.value);
-                const nextVal = opts[(curIdx + 1) % opts.length];
-                enrollCameraSelect.value = nextVal;
-                this.switchEnrollCamera(nextVal);
-            });
-        }
-
         // Roster Directory Toggles (Students vs Teachers)
         const btnShowStudentRoster = document.getElementById('btnShowStudentRoster');
         const btnShowTeacherRoster = document.getElementById('btnShowTeacherRoster');
@@ -179,16 +176,6 @@ const App = {
         const btnClearAllStudents = document.getElementById('btnClearAllStudents');
         if (btnClearAllStudents) {
             btnClearAllStudents.addEventListener('click', () => this.clearAllEnrolledStudents());
-        }
-
-        // Main Live Camera Source Switchers & Webcam Toggle
-        const btnToggleCam = document.getElementById('btnToggleCam');
-        if (btnToggleCam) {
-            btnToggleCam.addEventListener('click', () => this.toggleCameraSource());
-        }
-        const btnToggleWebcam = document.getElementById('btnToggleWebcam');
-        if (btnToggleWebcam) {
-            btnToggleWebcam.addEventListener('click', () => this.toggleWebcam());
         }
 
         // Student Enrollment Form Submission
@@ -364,7 +351,30 @@ const App = {
             this.fetchEnrolledStudents();
             this.fetchEnrolledTeachers();
             const camFeed = document.getElementById('enrollLiveCameraFeed');
-            if (camFeed && !this.useEnrollWebcam) camFeed.src = `${this.getApiUrl('/api/video/feed')}?t=` + Date.now();
+            const enrollVideo = document.getElementById('enrollWebcamVideo');
+            if (this.useEnrollWebcam && this.enrollWebcamStream && enrollVideo) {
+                enrollVideo.srcObject = this.enrollWebcamStream;
+                enrollVideo.style.display = 'block';
+                enrollVideo.play().catch(() => {});
+                if (camFeed) camFeed.style.display = 'none';
+            } else if (camFeed && !this.useEnrollWebcam) {
+                camFeed.src = `${this.getApiUrl('/api/video/feed')}?t=` + Date.now();
+                camFeed.style.display = 'block';
+                if (enrollVideo) enrollVideo.style.display = 'none';
+            }
+        } else if (tabId === 'tab-kiosk') {
+            const liveFeed = document.getElementById('liveVideoFeed');
+            const liveVideo = document.getElementById('webcamVideo');
+            if (this.useWebcam && this.webcamStream && liveVideo) {
+                liveVideo.srcObject = this.webcamStream;
+                liveVideo.style.display = 'block';
+                liveVideo.play().catch(() => {});
+                if (liveFeed) liveFeed.style.display = 'none';
+            } else if (liveFeed && !this.useWebcam) {
+                liveFeed.src = `${this.getApiUrl('/api/video/feed')}?t=` + Date.now();
+                liveFeed.style.display = 'block';
+                if (liveVideo) liveVideo.style.display = 'none';
+            }
         }
     },
 
@@ -568,6 +578,14 @@ const App = {
                     const res = await bridge.signIn(email, password);
 
                     if (res.success) {
+                        try {
+                            localStorage.setItem('attendance_auth_user', JSON.stringify({
+                                email: res.user.email,
+                                displayName: res.user.displayName || res.user.email,
+                                uid: res.user.uid
+                            }));
+                        } catch (e) {}
+                        this.updateAuthUI(res.user);
                         this.showToast(`Welcome, ${res.user.displayName || res.user.email}!`, "success");
                         form.reset();
                     } else {
@@ -598,10 +616,14 @@ const App = {
 
         if (btnLogout) {
             btnLogout.addEventListener('click', async () => {
+                try {
+                    localStorage.removeItem('attendance_auth_user');
+                } catch (e) {}
                 if (window.FirebaseBridge) {
                     await window.FirebaseBridge.signOutUser();
-                    this.showToast("Signed out of Firebase Cloud", "info");
                 }
+                this.updateAuthUI(null);
+                this.showToast("Signed out of Faculty Portal", "info");
             });
         }
 
@@ -623,31 +645,51 @@ const App = {
         const badge = document.getElementById('userAuthBadge');
         const emailSpan = document.getElementById('userEmailSpan');
 
-        // Security check: if the user is in the middle of password reset, never show dashboard
+        // Security check: if the user is in the middle of password reset, strictly gate dashboard
         if (this.isResettingPassword) {
-            console.log("[Auth Gateway] In password reset mode - suppressing dashboard access.");
+            this.lastAuthUserId = null;
             if (dashboard) dashboard.style.display = 'none';
             if (gateway) gateway.style.display = 'flex';
             if (badge) badge.style.display = 'none';
             return;
         }
 
-        if (user) {
-            console.log("Authenticated as:", user.email);
+        // Determine effective user: fall back to cached session to prevent cross-origin iframe desync loops
+        let effectiveUser = user;
+        if (!effectiveUser) {
+            try {
+                const cached = localStorage.getItem('attendance_auth_user');
+                if (cached) {
+                    effectiveUser = JSON.parse(cached);
+                }
+            } catch (e) {}
+        }
+
+        const effectiveUserId = effectiveUser ? (effectiveUser.uid || effectiveUser.email) : null;
+
+        // PREVENT CONSTANT TOGGLING / FLICKERING:
+        // If authentication state is already applied and unchanged, skip redundant re-rendering
+        if (this.lastAuthUserId !== undefined && this.lastAuthUserId === effectiveUserId) {
+            return;
+        }
+        this.lastAuthUserId = effectiveUserId;
+
+        if (effectiveUser) {
+            console.log("Authenticated as:", effectiveUser.email);
             if (gateway) gateway.style.display = 'none';
             if (dashboard) dashboard.style.display = 'flex';
             if (badge) badge.style.display = 'inline-flex';
             if (emailSpan) {
-                emailSpan.textContent = user.displayName || user.email;
-                emailSpan.title = user.email;
+                emailSpan.textContent = effectiveUser.displayName || effectiveUser.email;
+                emailSpan.title = effectiveUser.email;
             }
 
-            // Start live dashboard feeds
+            // Start live dashboard feeds only once on transition to authenticated
             this.refreshVideoFeeds();
             this.fetchSessionStatus();
             this.fetchAnalytics();
             this.fetchEnrolledStudents();
-            if (!this.ws) {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
                 this.connectWebSocket();
             }
         } else {
@@ -655,6 +697,10 @@ const App = {
             if (dashboard) dashboard.style.display = 'none';
             if (gateway) gateway.style.display = 'flex';
             if (badge) badge.style.display = 'none';
+            if (this.ws) {
+                try { this.ws.close(); } catch (e) {}
+                this.ws = null;
+            }
         }
     },
 
@@ -682,6 +728,10 @@ const App = {
     },
 
     connectWebSocket() {
+        if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+            return;
+        }
+
         let wsUrl;
         if (window.location.protocol !== 'file:' && window.location.port === '8080') {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -711,8 +761,13 @@ const App = {
             };
 
             this.ws.onclose = () => {
-                console.warn("WebSocket disconnected. Reconnecting in 3s...");
-                setTimeout(() => this.connectWebSocket(), 3000);
+                this.ws = null;
+                if (this.lastAuthUserId) {
+                    console.warn("WebSocket disconnected. Reconnecting in 3s...");
+                    setTimeout(() => {
+                        if (this.lastAuthUserId) this.connectWebSocket();
+                    }, 3000);
+                }
             };
         } catch (e) {
             console.error("WebSocket connection error:", e);
@@ -730,6 +785,18 @@ const App = {
         } else if (msg.type === "SESSION_ENDED") {
             this.showToast(`Lecture Session Ended`, "info");
             this.fetchSessionStatus();
+        } else if (msg.type === "ATTENDANCE_RESET") {
+            this.presentStudents.clear();
+            const presentEl = document.getElementById('classPresentCount');
+            if (presentEl) presentEl.textContent = 0;
+            const kpiPresent = document.getElementById('kpiPresentCount');
+            if (kpiPresent) kpiPresent.textContent = 0;
+            const feed = document.getElementById('attendanceFeed');
+            if (feed) {
+                feed.innerHTML = '<div class="feed-empty-state" id="feedEmptyState" style="text-align:center; padding: 20px; color: #94a3b8;"><i class="fa-solid fa-rotate-left"></i> Attendance reset. Ready to retake.</div>';
+            }
+            this.renderLiveClassPresence();
+            this.showToast("Attendance reset! Ready to retake.", "info");
         }
     },
 
@@ -883,48 +950,94 @@ const App = {
         }
     },
 
+    async resetAttendance() {
+        if (!confirm("Are you sure you want to reset attendance and retake it?\n\nThis will clear marked attendance records and reset camera detection so students can be recognized again.")) {
+            return;
+        }
+
+        const resetBtn = document.getElementById('btnResetAttendance');
+        if (resetBtn) {
+            resetBtn.disabled = true;
+            resetBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Resetting...';
+        }
+
+        try {
+            const res = await fetch(this.getApiUrl('/api/attendance/reset'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.detail || errData.message || `HTTP ${res.status}`);
+            }
+
+            const data = await res.json();
+            this.presentStudents.clear();
+            const presentEl = document.getElementById('classPresentCount');
+            if (presentEl) presentEl.textContent = 0;
+            const kpiPresent = document.getElementById('kpiPresentCount');
+            if (kpiPresent) kpiPresent.textContent = 0;
+            const feed = document.getElementById('attendanceFeed');
+            if (feed) {
+                feed.innerHTML = '<div class="feed-empty-state" id="feedEmptyState" style="text-align:center; padding: 20px; color: #94a3b8;"><i class="fa-solid fa-rotate-left"></i> Attendance reset. Ready to retake.</div>';
+            }
+            this.renderLiveClassPresence();
+            const countStr = data.cleared_count !== undefined ? ` (${data.cleared_count} records cleared)` : '';
+            this.showToast(`Attendance reset successfully${countStr}! Camera ready to retake.`, "success");
+        } catch (e) {
+            console.error("Error resetting attendance:", e);
+            this.showToast("Reset error: " + e.message, "error");
+        } finally {
+            if (resetBtn) {
+                resetBtn.disabled = false;
+                resetBtn.innerHTML = '<i class="fa-solid fa-rotate-left"></i> Retake Attendance';
+            }
+        }
+    },
+
 
 
     addLiveAttendanceItem(data) {
-        const feed = document.getElementById('attendanceFeed');
-        if (!feed) return;
-
-        // Clear empty state prompt if present
-        const emptyState = document.getElementById('feedEmptyState');
-        if (emptyState) emptyState.remove();
-
         const student = data.student;
         const timeStr = data.timestamp || new Date().toLocaleTimeString();
 
-        // Increment present count
+        // Increment present count and update class presence grid
         this.presentStudents.add(student.student_id);
         const presentEl = document.getElementById('kpiPresentCount');
         if (presentEl) presentEl.textContent = this.presentStudents.size;
         this.renderLiveClassPresence();
 
-        // Create item element
-        const item = document.createElement('div');
-        item.className = 'feed-item';
-        item.innerHTML = `
-            <div class="student-meta">
-                <div class="student-avatar">${student.name.charAt(0)}</div>
-                <div class="student-info">
-                    <h4>${student.name}</h4>
-                    <p>${student.roll_number} • ${student.class_section}</p>
+        const feed = document.getElementById('attendanceFeed');
+        if (feed) {
+            // Clear empty state prompt if present
+            const emptyState = document.getElementById('feedEmptyState');
+            if (emptyState) emptyState.remove();
+
+            // Create item element
+            const item = document.createElement('div');
+            item.className = 'feed-item';
+            item.innerHTML = `
+                <div class="student-meta">
+                    <div class="student-avatar">${student.name.charAt(0)}</div>
+                    <div class="student-info">
+                        <h4>${student.name}</h4>
+                        <p>${student.roll_number} • ${student.class_section}</p>
+                    </div>
                 </div>
-            </div>
-            <div class="feed-badges">
-                <div class="time-badge">${timeStr}</div>
-                <div class="conf-pill">Match: ${Math.round(student.confidence * 100)}%</div>
-            </div>
-        `;
+                <div class="feed-badges">
+                    <div class="time-badge">${timeStr}</div>
+                    <div class="conf-pill">Match: ${Math.round(student.confidence * 100)}%</div>
+                </div>
+            `;
 
-        // Prepend to feed
-        feed.insertBefore(item, feed.firstChild);
+            // Prepend to feed
+            feed.insertBefore(item, feed.firstChild);
 
-        // Limit feed to top 15 items
-        while (feed.children.length > 15) {
-            feed.removeChild(feed.lastChild);
+            // Limit feed to top 15 items
+            while (feed.children.length > 15) {
+                feed.removeChild(feed.lastChild);
+            }
         }
 
         // Real-Time Cloud Sync to Firebase Firestore
@@ -996,78 +1109,363 @@ const App = {
         }
     },
 
-    async toggleCameraSource() {
-        const btns = [
-            document.getElementById('btnToggleCam'),
-            document.getElementById('btnEnrollToggleCam')
+    initCameraControls() {
+        // 1. Live Viewport Camera Selector
+        const liveSelect = document.getElementById('liveCameraSelect');
+        if (liveSelect) {
+            liveSelect.addEventListener('change', (e) => {
+                this.switchCameraTo(e.target.value);
+            });
+        }
+
+        // 2. Enrollment Studio Camera Selector
+        const enrollSelect = document.getElementById('enrollCameraSelect');
+        if (enrollSelect) {
+            enrollSelect.addEventListener('change', (e) => {
+                this.switchCameraTo(e.target.value);
+            });
+        }
+
+        // 3. Quick Switch to Next Camera Buttons
+        const btnLiveQuickSwitch = document.getElementById('btnLiveQuickSwitch');
+        if (btnLiveQuickSwitch) {
+            btnLiveQuickSwitch.addEventListener('click', () => this.cycleToNextCamera());
+        }
+
+        const btnEnrollToggleCam = document.getElementById('btnEnrollToggleCam');
+        if (btnEnrollToggleCam) {
+            btnEnrollToggleCam.addEventListener('click', () => this.cycleToNextCamera());
+        }
+
+        const btnToggleCam = document.getElementById('btnToggleCam');
+        if (btnToggleCam) {
+            btnToggleCam.addEventListener('click', () => this.cycleToNextCamera());
+        }
+
+        // 4. Refresh / Rescan Connected Cameras Buttons
+        const btnLiveRefreshCams = document.getElementById('btnLiveRefreshCams');
+        if (btnLiveRefreshCams) {
+            btnLiveRefreshCams.addEventListener('click', () => this.detectAndPopulateCameras(true));
+        }
+
+        const btnEnrollRefreshCam = document.getElementById('btnEnrollRefreshCam');
+        if (btnEnrollRefreshCam) {
+            btnEnrollRefreshCam.addEventListener('click', () => this.detectAndPopulateCameras(true));
+        }
+
+        // 5. Direct Browser Webcam toggle button in Live Viewport
+        const btnToggleWebcam = document.getElementById('btnToggleWebcam');
+        if (btnToggleWebcam) {
+            btnToggleWebcam.addEventListener('click', () => this.toggleWebcam());
+        }
+
+        // 6. Automatically listen for hardware cameras plugged / unplugged
+        if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+            try {
+                navigator.mediaDevices.addEventListener('devicechange', () => {
+                    console.log("Hardware media device change detected, refreshing camera list...");
+                    this.detectAndPopulateCameras(false);
+                });
+            } catch (err) {
+                console.debug("Could not attach devicechange listener:", err);
+            }
+        }
+
+        // Initial scan for edge & browser cameras
+        this.detectAndPopulateCameras(false);
+    },
+
+    async detectAndPopulateCameras(showToast = false) {
+        let edgeList = [];
+        let webcamList = [];
+
+        const refreshBtns = [
+            document.getElementById('btnLiveRefreshCams'),
+            document.getElementById('btnEnrollRefreshCam')
         ].filter(Boolean);
 
-        btns.forEach(b => {
+        refreshBtns.forEach(b => {
             b.disabled = true;
-            b.dataset.origText = b.innerHTML;
-            b.innerHTML = "⏳ Switching...";
+            b.classList.add('fa-spin');
         });
 
+        // 1. Scan Edge Hardware Cameras via Backend API
         try {
-            const res = await fetch(this.getApiUrl('/api/diagnostics/camera/toggle'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            });
-            const data = await res.json();
-
-            if (res.ok && data.success) {
-                const dev = data.current_source !== undefined ? data.current_source : 0;
-                this.showToast(`🎥 Camera Switched to Device ${dev}`, "success");
-                this.updateCameraSourceUI(dev);
-                this.refreshVideoFeeds();
-            } else {
-                this.showToast(data.message || data.detail || "Unable to switch camera", "error");
+            const res = await fetch(this.getApiUrl('/api/diagnostics/cameras'));
+            if (res.ok) {
+                const data = await res.json();
+                if (data.cameras && Array.isArray(data.cameras)) {
+                    edgeList = data.cameras;
+                }
             }
         } catch (e) {
-            console.error("Error toggling camera feed:", e);
-            this.showToast("Camera toggle error: " + e.message, "error");
-        } finally {
-            btns.forEach(b => {
-                b.disabled = false;
+            console.warn("Could not probe edge cameras from backend, using defaults:", e);
+        }
+
+        if (edgeList.length === 0) {
+            edgeList = [
+                { id: 0, name: "Camera 0 (Default Edge Cam)", is_active: true }
+            ];
+        }
+        this.edgeCameras = edgeList;
+
+        // 2. Scan Browser Webcams via WebRTC
+        if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+            try {
+                // If user clicked refresh explicitly and labels might be hidden, probe stream to reveal labels
+                if (showToast && navigator.mediaDevices.getUserMedia) {
+                    try {
+                        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true });
+                        tempStream.getTracks().forEach(t => t.stop());
+                    } catch (e) {
+                        // User might have dismissed or denied, continue anyway
+                    }
+                }
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoInputs = devices.filter(d => d.kind === 'videoinput');
+                videoInputs.forEach((dev, idx) => {
+                    webcamList.push({
+                        deviceId: dev.deviceId,
+                        label: dev.label || `Webcam ${idx + 1}`
+                    });
+                });
+            } catch (err) {
+                console.warn("Could not enumerate browser media devices:", err);
+            }
+        }
+
+        this.browserWebcams = webcamList;
+
+        // 3. Construct Unified Options List
+        const options = [];
+        edgeList.forEach(c => {
+            options.push({
+                value: `edge-${c.id}`,
+                label: `📹 ${c.name || `Camera ${c.id}`}`,
+                type: 'edge',
+                id: c.id
             });
+        });
+
+        if (webcamList.length > 0) {
+            webcamList.forEach((w, idx) => {
+                options.push({
+                    value: `webcam-${w.deviceId || idx}`,
+                    label: `📷 Webcam: ${w.label}`,
+                    type: 'webcam',
+                    deviceId: w.deviceId
+                });
+            });
+        } else {
+            options.push({
+                value: 'webcam-default',
+                label: '📷 Browser Webcam (Direct Feed)',
+                type: 'webcam',
+                deviceId: 'default'
+            });
+        }
+
+        this.availableCameras = options;
+
+        // 4. Populate Dropdowns in both Live Kiosk and Enrollment Studio
+        const selects = [
+            document.getElementById('liveCameraSelect'),
+            document.getElementById('enrollCameraSelect')
+        ].filter(Boolean);
+
+        selects.forEach(sel => {
+            sel.innerHTML = '';
+            options.forEach(opt => {
+                const el = document.createElement('option');
+                el.value = opt.value;
+                el.textContent = opt.label;
+                sel.appendChild(el);
+            });
+            const exists = options.some(o => o.value === this.activeCameraKey);
+            sel.value = exists ? this.activeCameraKey : options[0].value;
+        });
+
+        if (!options.some(o => o.value === this.activeCameraKey) && options.length > 0) {
+            this.activeCameraKey = options[0].value;
+        }
+
+        refreshBtns.forEach(b => {
+            b.disabled = false;
+            b.classList.remove('fa-spin');
+        });
+
+        if (showToast) {
+            const total = options.length;
+            this.showToast(`🔍 Camera scan complete: ${total} active source(s) available`, "info");
         }
     },
 
-    async switchCameraTo(targetSrc) {
-        const btns = [
-            document.getElementById('btnToggleCam'),
-            document.getElementById('btnEnrollToggleCam'),
-            document.getElementById('btnDiagToggle'),
-            document.getElementById('btnDiagCam0'),
-            document.getElementById('btnDiagCam1')
-        ].filter(Boolean);
+    cycleToNextCamera() {
+        if (!this.availableCameras || this.availableCameras.length === 0) {
+            this.showToast("No cameras detected to switch between", "warning");
+            return;
+        }
+        const values = this.availableCameras.map(c => c.value);
+        let curIdx = values.indexOf(this.activeCameraKey);
+        if (curIdx === -1) curIdx = 0;
+        const nextIdx = (curIdx + 1) % values.length;
+        const nextKey = values[nextIdx];
+        this.switchCameraTo(nextKey);
+    },
 
-        btns.forEach(b => {
-            b.disabled = true;
-        });
+    async switchCameraTo(camKey) {
+        if (!camKey) return;
+        this.activeCameraKey = camKey;
 
-        try {
-            const res = await fetch(this.getApiUrl('/api/diagnostics/camera/switch'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ source: targetSrc })
-            });
-            const data = await res.json();
+        // Synchronize both select dropdowns
+        const liveSelect = document.getElementById('liveCameraSelect');
+        const enrollSelect = document.getElementById('enrollCameraSelect');
+        if (liveSelect) liveSelect.value = camKey;
+        if (enrollSelect) enrollSelect.value = camKey;
 
-            if (res.ok && data.success) {
-                this.showToast(`🎥 Activated Camera Device ${targetSrc}`, "success");
-                this.updateCameraSourceUI(targetSrc);
-                this.refreshVideoFeeds();
-            } else {
-                this.showToast(data.message || data.detail || `Camera ${targetSrc} unavailable`, "error");
+        // UI elements for Live Viewport
+        const liveImg = document.getElementById('liveVideoFeed');
+        const liveVideo = document.getElementById('webcamVideo');
+        const badgeCamStatus = document.getElementById('badgeCamStatus');
+        const badgeWebcamLive = document.getElementById('badgeWebcamLive');
+        const btnToggleWebcam = document.getElementById('btnToggleWebcam');
+
+        // UI elements for Enrollment Viewport
+        const enrollImg = document.getElementById('enrollLiveCameraFeed');
+        const enrollVideo = document.getElementById('enrollWebcamVideo');
+        const enrollCamStatusText = document.getElementById('enrollCamStatusText');
+        const enrollCamStatusDot = document.getElementById('enrollCamStatusDot');
+
+        // Find option info for label display
+        const opt = (this.availableCameras || []).find(c => c.value === camKey);
+        const camLabel = opt ? opt.label.replace(/^[\uD800-\uDBFF\uDC00-\uDFFF\s]+/, '') : camKey;
+
+        if (camKey.startsWith('edge-') || (!camKey.startsWith('webcam') && !isNaN(parseInt(camKey)))) {
+            // --- Hardware Edge Camera (Streamed via backend MJPEG) ---
+            const devIdx = parseInt(camKey.replace('edge-', '')) || 0;
+
+            // Stop browser webcam stream tracks to free hardware / USB bus
+            if (this.webcamStream) {
+                try { this.webcamStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+                this.webcamStream = null;
             }
-        } catch (e) {
-            console.error("Error activating camera:", e);
-            this.showToast("Camera activation error: " + e.message, "error");
-        } finally {
-            btns.forEach(b => {
-                b.disabled = false;
-            });
+            if (this.enrollWebcamStream) {
+                try { this.enrollWebcamStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+                this.enrollWebcamStream = null;
+            }
+            this.useWebcam = false;
+            this.useEnrollWebcam = false;
+
+            // Update Live viewport
+            if (liveVideo) {
+                liveVideo.pause();
+                liveVideo.srcObject = null;
+                liveVideo.style.display = 'none';
+            }
+            if (liveImg) liveImg.style.display = 'block';
+            if (badgeWebcamLive) badgeWebcamLive.style.display = 'none';
+            if (badgeCamStatus) {
+                badgeCamStatus.textContent = `CAMERA ${devIdx} (LIVE)`;
+                badgeCamStatus.style.color = "#10b981";
+            }
+            if (btnToggleWebcam) btnToggleWebcam.innerHTML = '<i class="fa-solid fa-camera"></i> Browser Webcam';
+
+            // Update Enrollment viewport
+            if (enrollVideo) {
+                enrollVideo.pause();
+                enrollVideo.srcObject = null;
+                enrollVideo.style.display = 'none';
+            }
+            if (enrollImg) enrollImg.style.display = 'block';
+            if (enrollCamStatusDot) enrollCamStatusDot.style.background = "#10b981";
+            if (enrollCamStatusText) enrollCamStatusText.textContent = `CAMERA ${devIdx} (LIVE)`;
+
+            // Switch backend hardware camera
+            try {
+                const res = await fetch(this.getApiUrl('/api/diagnostics/camera/switch'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source: devIdx })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    this.showToast(`🎥 Activated Camera Device ${devIdx}`, "success");
+                    this.refreshVideoFeeds();
+                } else {
+                    this.showToast(data.message || data.detail || `Camera ${devIdx} standby`, "info");
+                }
+            } catch (err) {
+                console.warn("Error switching edge camera:", err);
+                this.showToast(`Camera ${devIdx} active (edge mode)`, "info");
+                this.refreshVideoFeeds();
+            }
+
+            this.updateCameraSourceUI(devIdx);
+
+        } else if (camKey.startsWith('webcam')) {
+            // --- Direct Browser WebRTC Webcam Feed ---
+            const targetDeviceId = (camKey === 'webcam-default' || camKey === 'webcam') 
+                ? null 
+                : camKey.replace('webcam-', '');
+
+            // Stop any existing tracks first
+            if (this.webcamStream) {
+                try { this.webcamStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+                this.webcamStream = null;
+            }
+            if (this.enrollWebcamStream) {
+                try { this.enrollWebcamStream.getTracks().forEach(t => t.stop()); } catch(e) {}
+                this.enrollWebcamStream = null;
+            }
+
+            try {
+                const constraints = {
+                    video: targetDeviceId 
+                        ? { deviceId: { exact: targetDeviceId }, width: { ideal: 640 }, height: { ideal: 480 } }
+                        : { width: { ideal: 640 }, height: { ideal: 480 } }
+                };
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                this.webcamStream = stream;
+                this.enrollWebcamStream = stream;
+                this.useWebcam = true;
+                this.useEnrollWebcam = true;
+
+                // Hook to Live Viewport Video
+                if (liveImg) liveImg.style.display = 'none';
+                if (liveVideo) {
+                    liveVideo.srcObject = stream;
+                    liveVideo.style.display = 'block';
+                    liveVideo.play().catch(e => console.debug("Video play suppressed:", e));
+                }
+                if (badgeWebcamLive) {
+                    badgeWebcamLive.style.display = 'inline-block';
+                    badgeWebcamLive.textContent = "BROWSER WEBCAM (LIVE)";
+                }
+                if (badgeCamStatus) {
+                    badgeCamStatus.textContent = "WEBCAM STREAM";
+                    badgeCamStatus.style.color = "#38bdf8";
+                }
+                if (btnToggleWebcam) btnToggleWebcam.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Edge Camera Feed';
+
+                // Hook to Enrollment Viewport Video
+                if (enrollImg) enrollImg.style.display = 'none';
+                if (enrollVideo) {
+                    enrollVideo.srcObject = stream;
+                    enrollVideo.style.display = 'block';
+                    enrollVideo.play().catch(e => console.debug("Video play suppressed:", e));
+                }
+                if (enrollCamStatusDot) enrollCamStatusDot.style.background = "#38bdf8";
+                if (enrollCamStatusText) enrollCamStatusText.textContent = "BROWSER WEBCAM (LIVE)";
+
+                this.showToast(`📷 Connected to ${camLabel}!`, "success");
+
+            } catch (err) {
+                console.error("Webcam switch error:", err);
+                this.showToast(`Could not activate webcam: ${err.message}`, "error");
+                // Fallback to edge camera 0
+                this.switchCameraTo('edge-0');
+            }
         }
     },
 
@@ -1077,66 +1475,21 @@ const App = {
         if (btnToggleCam) btnToggleCam.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Switch to Cam ${nextDev}`;
 
         const btnEnrollToggleCam = document.getElementById('btnEnrollToggleCam');
-        if (btnEnrollToggleCam) btnEnrollToggleCam.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Switch (Cam ${nextDev})`;
+        if (btnEnrollToggleCam) btnEnrollToggleCam.innerHTML = `<i class="fa-solid fa-arrows-rotate"></i> Next Cam`;
 
         const diagCamSource = document.getElementById('diagCamSource');
         if (diagCamSource) diagCamSource.textContent = `Camera ${currentDev} (Active)`;
 
-        const enrollCameraSelect = document.getElementById('enrollCameraSelect');
-        if (enrollCameraSelect && enrollCameraSelect.value !== 'webcam') {
-            enrollCameraSelect.value = String(currentDev);
-        }
         const statusText = document.getElementById('enrollCamStatusText');
         if (statusText && !this.useEnrollWebcam) statusText.textContent = `CAMERA ${currentDev} (LIVE)`;
     },
 
     async switchEnrollCamera(camVal) {
-        const videoEl = document.getElementById('enrollWebcamVideo');
-        const imgEl = document.getElementById('enrollLiveCameraFeed');
-        const statusText = document.getElementById('enrollCamStatusText');
-        const statusDot = document.getElementById('enrollCamStatusDot');
+        return this.switchCameraTo(camVal);
+    },
 
-        if (camVal === 'webcam') {
-            try {
-                if (!this.enrollWebcamStream) {
-                    const stream = await navigator.mediaDevices.getUserMedia({
-                        video: { width: { ideal: 640 }, height: { ideal: 480 } }
-                    });
-                    this.enrollWebcamStream = stream;
-                }
-                if (videoEl) {
-                    videoEl.srcObject = this.enrollWebcamStream;
-                    videoEl.style.display = 'block';
-                }
-                if (imgEl) imgEl.style.display = 'none';
-                if (statusText) statusText.textContent = "BROWSER WEBCAM (LIVE)";
-                if (statusDot) statusDot.style.background = "#38bdf8";
-                this.useEnrollWebcam = true;
-                this.showToast("Switched to Browser Live Webcam for Enrollment", "info");
-            } catch (err) {
-                console.error("Enrollment webcam error:", err);
-                this.showToast("Could not access browser webcam: " + err.message, "error");
-                const sel = document.getElementById('enrollCameraSelect');
-                if (sel) sel.value = "0";
-                this.switchEnrollCamera("0");
-            }
-        } else {
-            // Hardware Edge Camera 0, 1, or 2
-            if (this.enrollWebcamStream) {
-                this.enrollWebcamStream.getTracks().forEach(t => t.stop());
-                this.enrollWebcamStream = null;
-            }
-            if (videoEl) videoEl.style.display = 'none';
-            if (imgEl) imgEl.style.display = 'block';
-            if (statusDot) statusDot.style.background = "#10b981";
-            if (statusText) statusText.textContent = `CAMERA ${camVal} (LIVE)`;
-            this.useEnrollWebcam = false;
-
-            const camIdx = parseInt(camVal);
-            if (!isNaN(camIdx)) {
-                await this.switchCameraTo(camIdx);
-            }
-        }
+    async toggleCameraSource() {
+        this.cycleToNextCamera();
     },
 
     refreshVideoFeeds() {
@@ -1155,7 +1508,8 @@ const App = {
         e.preventDefault();
         const studentId = document.getElementById('enrollStudentId').value.trim();
         const name = document.getElementById('enrollName').value.trim();
-        const roll = document.getElementById('enrollRoll').value.trim();
+        const rollEl = document.getElementById('enrollRoll');
+        const roll = (rollEl && rollEl.value.trim()) ? rollEl.value.trim() : studentId;
         const section = document.getElementById('enrollSection').value.trim();
         const email = document.getElementById('enrollEmail') ? document.getElementById('enrollEmail').value.trim() : '';
         const photoFile = document.getElementById('enrollPhotoFile').files[0];
@@ -1303,12 +1657,13 @@ const App = {
         if (this.enrollMode === 'student') {
             const studentId = document.getElementById('enrollStudentId').value.trim();
             const name = document.getElementById('enrollName').value.trim();
-            const roll = document.getElementById('enrollRoll').value.trim();
+            const rollEl = document.getElementById('enrollRoll');
+            const roll = (rollEl && rollEl.value.trim()) ? rollEl.value.trim() : studentId;
             const section = document.getElementById('enrollSection').value.trim();
             const email = document.getElementById('enrollEmail') ? document.getElementById('enrollEmail').value.trim() : '';
 
-            if (!studentId || !name || !roll || !section) {
-                this.showToast("Please fill in Student Name, ID Number, Roll Number, and Class before snapping photo", "error");
+            if (!studentId || !name || !section) {
+                this.showToast("Please fill in Student Name, ID Number, and Class before snapping photo", "error");
                 return;
             }
 
@@ -1518,7 +1873,7 @@ const App = {
 
             students.forEach(s => {
                 const tr = document.createElement('tr');
-                const photoSrc = s.photo_path ? `${this.getApiUrl('/faces/' + s.photo_path.split('\\\\').pop().split('/').pop())}?t=${Date.now()}` : '';
+                const photoSrc = s.photo_path ? `${this.getApiUrl('/faces/' + s.photo_path.split(/[/\\]/).pop())}?t=${Date.now()}` : '';
                 const photoHtml = photoSrc 
                     ? `<img src="${photoSrc}" style="width: 38px; height: 38px; border-radius: 6px; object-fit: cover; border: 1px solid rgba(79, 70, 229, 0.3);" onerror="this.outerHTML='<div style=\\'width:38px;height:38px;border-radius:6px;background:#f1f5f9;border:1px solid #e2e8f0;display:flex;align-items:center;justify-content:center;color:#64748b;\\'><i class=\\'fa-solid fa-user\\'></i></div>'">`
                     : `<div style="width: 38px; height: 38px; border-radius: 6px; background: #f1f5f9; border: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: center; color: #64748b;"><i class="fa-solid fa-user"></i></div>`;
@@ -1579,7 +1934,7 @@ const App = {
 
             teachers.forEach(t => {
                 const tr = document.createElement('tr');
-                const photoSrc = t.photo_path ? `${this.getApiUrl('/faces/' + t.photo_path.split('\\\\').pop().split('/').pop())}?t=${Date.now()}` : '';
+                const photoSrc = t.photo_path ? `${this.getApiUrl('/faces/' + t.photo_path.split(/[/\\]/).pop())}?t=${Date.now()}` : '';
                 const photoHtml = photoSrc 
                     ? `<img src="${photoSrc}" style="width: 38px; height: 38px; border-radius: 6px; object-fit: cover; border: 1px solid rgba(16, 185, 129, 0.3);" onerror="this.outerHTML='<div style=\\'width:38px;height:38px;border-radius:6px;background:#ecfdf5;border:1px solid #a7f3d0;display:flex;align-items:center;justify-content:center;color:#059669;\\'><i class=\\'fa-solid fa-chalkboard-user\\'></i></div>'">`
                     : `<div style="width: 38px; height: 38px; border-radius: 6px; background: #ecfdf5; border: 1px solid #a7f3d0; display: flex; align-items: center; justify-content: center; color: #059669;"><i class="fa-solid fa-chalkboard-user"></i></div>`;
@@ -1681,41 +2036,11 @@ const App = {
     },
 
     async toggleWebcam() {
-        const videoEl = document.getElementById('webcamVideo');
-        const imgEl = document.getElementById('liveVideoFeed');
-        const badge = document.getElementById('badgeWebcamLive');
-        const btn = document.getElementById('btnToggleWebcam');
-
         if (this.useWebcam) {
-            if (this.webcamStream) {
-                this.webcamStream.getTracks().forEach(t => t.stop());
-                this.webcamStream = null;
-            }
-            if (videoEl) videoEl.style.display = 'none';
-            if (imgEl) imgEl.style.display = 'block';
-            if (badge) badge.style.display = 'none';
-            if (btn) btn.innerHTML = '<i class="fa-solid fa-camera"></i> Browser Webcam';
-            this.useWebcam = false;
-            this.showToast("Switched back to Edge Camera stream", "info");
+            await this.switchCameraTo('edge-0');
         } else {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({
-                    video: { width: { ideal: 640 }, height: { ideal: 480 } }
-                });
-                this.webcamStream = stream;
-                if (videoEl) {
-                    videoEl.srcObject = stream;
-                    videoEl.style.display = 'block';
-                }
-                if (imgEl) imgEl.style.display = 'none';
-                if (badge) badge.style.display = 'inline-block';
-                if (btn) btn.innerHTML = '<i class="fa-solid fa-arrows-rotate"></i> Edge Camera Stream';
-                this.useWebcam = true;
-                this.showToast("Connected to browser live webcam!", "success");
-            } catch (err) {
-                console.error("Webcam access error:", err);
-                this.showToast("Could not access browser webcam: " + err.message, "error");
-            }
+            const firstWebcam = (this.availableCameras || []).find(c => c.value.startsWith('webcam'));
+            await this.switchCameraTo(firstWebcam ? firstWebcam.value : 'webcam-default');
         }
     },
 
@@ -1729,9 +2054,14 @@ const App = {
                 statusBadge.textContent = "STANDBY / CONNECTING";
                 statusBadge.style.color = "#f59e0b";
             }
-            setTimeout(() => {
-                img.src = `${this.getApiUrl('/api/video/feed')}?t=${Date.now()}`;
-            }, 2500);
+            if (!this._feedRetryTimer && this.lastAuthUserId) {
+                this._feedRetryTimer = setTimeout(() => {
+                    this._feedRetryTimer = null;
+                    if (this.lastAuthUserId && img) {
+                        img.src = `${this.getApiUrl('/api/video/feed')}?t=${Date.now()}`;
+                    }
+                }, 3000);
+            }
         };
 
         img.onload = () => {
@@ -1792,35 +2122,50 @@ const App = {
             const card = document.createElement('div');
             card.className = `student-presence-card ${isPresent ? 'is-present' : 'is-absent'}`;
             card.dataset.studentId = s.student_id;
+            card.style.cssText = `
+                display: flex !important;
+                flex-direction: column !important;
+                justify-content: space-between !important;
+                background: #ffffff;
+                border-radius: 10px;
+                padding: 12px 14px;
+                border: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.3)'};
+                border-left: 5px solid ${isPresent ? '#10b981' : '#ef4444'} !important;
+                box-sizing: border-box !important;
+                min-width: 0 !important;
+                overflow: hidden !important;
+                min-height: 114px;
+                gap: 8px;
+            `;
 
             const photoSrc = s.photo_path 
-                ? `${this.getApiUrl('/faces/' + s.photo_path.split('\\\\').pop().split('/').pop())}?t=${Date.now()}` 
+                ? `${this.getApiUrl('/faces/' + s.photo_path.split(/[/\\]/).pop())}?t=${Date.now()}` 
                 : '';
             const photoHtml = photoSrc
-                ? `<img src="${photoSrc}" style="width: 42px; height: 42px; border-radius: 10px; object-fit: cover; border: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.3)'};" onerror="this.outerHTML='<div class=\\'student-presence-avatar\\' style=\\'background: ${isPresent ? '#ecfdf5; color: #059669;' : '#fef2f2; color: #dc2626;'}\\'>${(s.name || 'S').charAt(0)}</div>'">`
-                : `<div class="student-presence-avatar" style="background: ${isPresent ? '#ecfdf5; color: #059669;' : '#fef2f2; color: #dc2626;'}">${(s.name || 'S').charAt(0)}</div>`;
+                ? `<img src="${photoSrc}" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex-shrink: 0; border: 2px solid ${isPresent ? '#10b981' : '#f87171'};" onerror="this.outerHTML='<div class=\\'student-presence-avatar\\' style=\\'width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; background: ${isPresent ? '#ecfdf5; color: #059669; border: 2px solid #10b981;' : '#fef2f2; color: #dc2626; border: 2px solid #f87171;'}\\'>${(s.name || 'S').charAt(0)}</div>'">`
+                : `<div class="student-presence-avatar" style="width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; background: ${isPresent ? '#ecfdf5; color: #059669; border: 2px solid #10b981;' : '#fef2f2; color: #dc2626; border: 2px solid #f87171;'}">${(s.name || 'S').charAt(0)}</div>`;
 
             const statusBadge = isPresent
-                ? `<span class="badge-status-present"><i class="fa-solid fa-circle-check"></i> PRESENT</span>`
-                : `<span class="badge-status-absent"><i class="fa-solid fa-circle-xmark"></i> ABSENT</span>`;
+                ? `<span class="badge-status-present" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 800; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; white-space: nowrap; flex-shrink: 0;"><i class="fa-solid fa-circle-check"></i> PRESENT</span>`
+                : `<span class="badge-status-absent" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 800; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; white-space: nowrap; flex-shrink: 0;"><i class="fa-solid fa-circle-xmark"></i> ABSENT</span>`;
 
             const emailHtml = s.email 
-                ? `<div style="font-size: 0.68rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 150px; margin-top: 2px;" title="${s.email}"><i class="fa-solid fa-envelope"></i> ${s.email}</div>`
+                ? `<div style="font-size: 0.7rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; display: flex; align-items: center; gap: 4px;" title="${s.email}"><i class="fa-solid fa-envelope" style="font-size: 0.68rem; color: #94a3b8; flex-shrink: 0;"></i><span style="overflow: hidden; text-overflow: ellipsis;">${s.email}</span></div>`
                 : '';
 
             card.innerHTML = `
-                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                    <div style="display: flex; align-items: center; gap: 10px; overflow: hidden;">
-                        ${photoHtml}
-                        <div style="overflow: hidden;">
-                            <h4 style="margin: 0; font-size: 0.88rem; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 140px;" title="${s.name}">${s.name}</h4>
-                            <p style="margin: 2px 0 0 0; font-size: 0.74rem; color: #64748b;">${s.roll_number} • <strong style="color: #475569;">${s.class_section}</strong></p>
-                            ${emailHtml}
+                <div style="display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; overflow: hidden;">
+                    ${photoHtml}
+                    <div style="flex: 1; min-width: 0; overflow: hidden;">
+                        <h4 style="margin: 0; font-size: 0.88rem; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${s.name}">${s.name}</h4>
+                        <div style="margin: 2px 0 0 0; font-size: 0.73rem; color: #64748b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            ${s.roll_number ? `<span style="color: #334155;">${s.roll_number}</span> • ` : ''}<span style="background: #f1f5f9; padding: 1px 6px; border-radius: 4px; color: #475569; font-weight: 700;">${s.class_section}</span>
                         </div>
+                        ${emailHtml}
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding-top: 6px; border-top: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)'};">
-                    <span style="font-size: 0.68rem; font-weight: 700; color: #94a3b8;">${s.student_id}</span>
+                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-width: 0; margin-top: 6px; padding-top: 6px; border-top: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.15)'};">
+                    <span style="font-family: monospace; font-size: 0.72rem; font-weight: 700; color: #64748b; letter-spacing: 0.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${s.student_id}</span>
                     ${statusBadge}
                 </div>
             `;
@@ -1837,7 +2182,7 @@ const App = {
     async checkTimetableStatus() {
         const targetClass = (this.selectedClassFilter && this.selectedClassFilter !== 'ALL')
             ? this.selectedClassFilter
-            : 'CSE A';
+            : 'CSE';
 
         try {
             const res = await fetch(this.getApiUrl(`/api/timetable/status?class_name=${encodeURIComponent(targetClass)}`));
@@ -2081,14 +2426,11 @@ const App = {
 
     downloadSampleCsv() {
         const sampleCsv = `class_name,day_of_week,start_time,end_time,subject,teacher_name,teacher_id,room_number
-CSE A,Monday,09:00,10:00,Operating Systems,Prof. Alan Turing,FAC-CSE-01,Room 101
-CSE A,Monday,10:00,11:00,Database Systems,Prof. Ada Lovelace,FAC-CSE-02,Room 102
-CSE B,Monday,09:00,10:00,Data Structures,Prof. Alan Turing,FAC-CSE-01,Room 103
-CSE AIML,Monday,11:00,12:00,Machine Learning,Prof. Geoffrey Hinton,FAC-AIML-01,Lab 1
-CE,Monday,09:00,10:00,Structural Analysis,Prof. John Smeaton,FAC-CE-01,Hall A
-ME,Monday,10:00,11:00,Thermodynamics,Prof. James Watt,FAC-ME-01,Room 201
+CSE,Monday,09:00,10:00,Operating Systems,Prof. Alan Turing,FAC-CSE-01,Room 101
+CSE,Monday,10:00,11:00,Database Systems,Prof. Ada Lovelace,FAC-CSE-02,Room 102
 ECE,Monday,09:00,10:00,Signals & Systems,Prof. Claude Shannon,FAC-ECE-01,Room 301
-CSE A,Tuesday,09:00,10:00,Computer Networks,Prof. Alan Turing,FAC-CSE-01,Room 101`;
+CSE,Tuesday,09:00,10:00,Computer Networks,Prof. Alan Turing,FAC-CSE-01,Room 101
+ECE,Tuesday,10:00,11:00,Digital Electronics,Prof. Claude Shannon,FAC-ECE-01,Room 302`;
 
         const blob = new Blob([sampleCsv], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -2181,7 +2523,7 @@ CSE A,Tuesday,09:00,10:00,Computer Networks,Prof. Alan Turing,FAC-CSE-01,Room 10
             name: "John Doe",
             student_id: "STU-2026-001",
             roll_number: "CS-101",
-            class_section: "CSE A",
+            class_section: "CSE",
             email: "student@campus.edu"
         };
 
