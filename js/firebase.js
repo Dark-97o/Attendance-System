@@ -13,7 +13,9 @@ import {
     signOut, 
     onAuthStateChanged,
     updateProfile,
-    sendPasswordResetEmail
+    sendPasswordResetEmail,
+    setPersistence,
+    browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/11.4.0/firebase-auth.js";
 import { 
     getFirestore, 
@@ -38,6 +40,13 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// Explicitly lock persistence to local browser storage to prevent cross-origin iframe flicker
+try {
+    setPersistence(auth, browserLocalPersistence).catch((err) => {
+        console.warn("[Firebase Auth] setPersistence note:", err);
+    });
+} catch (e) {}
+
 // Global Firebase Bridge for Dashboard Integration
 const FirebaseBridge = {
     app,
@@ -51,6 +60,13 @@ const FirebaseBridge = {
         try {
             const userCredential = await signInWithEmailAndPassword(auth, email, password);
             this.currentUser = userCredential.user;
+            try {
+                localStorage.setItem('attendance_auth_user', JSON.stringify({
+                    email: userCredential.user.email,
+                    displayName: userCredential.user.displayName || userCredential.user.email,
+                    uid: userCredential.user.uid
+                }));
+            } catch (e) {}
             return { success: true, user: userCredential.user };
         } catch (error) {
             console.error("Firebase Auth SignIn Error:", error);
@@ -65,6 +81,13 @@ const FirebaseBridge = {
                 await updateProfile(userCredential.user, { displayName });
             }
             this.currentUser = userCredential.user;
+            try {
+                localStorage.setItem('attendance_auth_user', JSON.stringify({
+                    email: userCredential.user.email,
+                    displayName: userCredential.user.displayName || userCredential.user.email,
+                    uid: userCredential.user.uid
+                }));
+            } catch (e) {}
             return { success: true, user: userCredential.user };
         } catch (error) {
             console.error("Firebase Auth Register Error:", error);
@@ -74,6 +97,9 @@ const FirebaseBridge = {
 
     async signOutUser() {
         try {
+            try {
+                localStorage.removeItem('attendance_auth_user');
+            } catch (e) {}
             await signOut(auth);
             this.currentUser = null;
             return { success: true };
@@ -97,6 +123,15 @@ const FirebaseBridge = {
     onAuthChange(callback) {
         return onAuthStateChanged(auth, (user) => {
             this.currentUser = user;
+            if (user) {
+                try {
+                    localStorage.setItem('attendance_auth_user', JSON.stringify({
+                        email: user.email,
+                        displayName: user.displayName || user.email,
+                        uid: user.uid
+                    }));
+                } catch (e) {}
+            }
             callback(user);
         });
     },
