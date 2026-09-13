@@ -401,9 +401,15 @@ body {
 
 .kiosk-grid {
     display: grid;
-    grid-template-columns: 1.15fr 0.85fr;
+    grid-template-columns: 1fr 1.2fr;
     gap: 20px;
     align-items: start;
+}
+
+@media (max-width: 1100px) {
+    .kiosk-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .video-column {
@@ -538,6 +544,89 @@ body {
 .badge-night {
     color: #fbbf24;
     border-color: rgba(245, 158, 11, 0.3);
+}
+
+/* Compact Video Overlay Camera Switcher (Top Right) */
+.video-overlay-camera-ctrls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(15, 23, 42, 0.82);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.overlay-cam-select {
+    background: rgba(30, 41, 59, 0.95);
+    color: #f8fafc;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    padding: 4px 8px 4px 22px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+    max-width: 145px;
+    text-overflow: ellipsis;
+    outline: none;
+    transition: border-color 0.2s ease;
+}
+
+.overlay-cam-select:focus {
+    border-color: #6366f1;
+}
+
+.overlay-cam-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #4f46e5;
+    color: #ffffff;
+    border: 1px solid #6366f1;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+}
+
+.overlay-cam-btn:hover {
+    background: #4338ca;
+    transform: scale(1.02);
+}
+
+.overlay-cam-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.12);
+    color: #e2e8f0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 6px;
+    width: 26px;
+    height: 26px;
+    font-size: 0.72rem;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.overlay-cam-btn-icon:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: #ffffff;
+}
+
+.class-dashboard-card {
+    min-height: 480px;
+    height: auto !important;
 }
 
 .video-controls {
@@ -1699,14 +1788,14 @@ body {
 
 .live-student-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-    gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
 }
 
 .student-presence-card {
     background: #ffffff;
     border-radius: var(--radius-sm);
-    padding: 12px;
+    padding: 12px 14px;
     border: 1px solid var(--border-color);
     display: flex;
     align-items: center;
