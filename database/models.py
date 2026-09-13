@@ -44,6 +44,8 @@ class DatabaseManager:
     def delete_teacher(self, teacher_id: str) -> bool:
         with self._get_conn() as conn:
             cursor = conn.cursor()
+            cursor.execute("UPDATE timetable_routines SET teacher_id = NULL WHERE teacher_id = ?", (teacher_id,))
+            cursor.execute("DELETE FROM lecture_sessions WHERE teacher_id = ?", (teacher_id,))
             cursor.execute("DELETE FROM teachers WHERE teacher_id = ?", (teacher_id,))
             conn.commit()
             return True
