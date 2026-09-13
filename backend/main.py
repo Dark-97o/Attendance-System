@@ -94,9 +94,16 @@ def broadcast_ws_event(event_type: str, data: Dict[str, Any]):
     """Pushes real-time events to all connected touchscreen and dashboard WebSockets."""
     message = json.dumps({"type": event_type, "payload": data})
     disconnected = []
-    for ws in active_websockets:
+    for ws in list(active_websockets):
         try:
-            asyncio.run_coroutine_threadsafe(ws.send_text(message), loop)
+            future = asyncio.run_coroutine_threadsafe(ws.send_text(message), loop)
+            def _check_result(f, socket=ws):
+                try:
+                    f.result()
+                except Exception:
+                    if socket in active_websockets:
+                        active_websockets.remove(socket)
+            future.add_done_callback(_check_result)
         except Exception:
             disconnected.append(ws)
     for ws in disconnected:
@@ -107,6 +114,19 @@ def broadcast_ws_event(event_type: str, data: Dict[str, Any]):
 async def lifespan(app: FastAPI):
     global loop, is_inference_running
     loop = asyncio.get_running_loop()
+
+    # Suppress benign Windows socket disconnection noise and client drops
+    def handle_async_exception(l, ctx):
+        exc = ctx.get('exception')
+        if isinstance(exc, (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, OSError)):
+            return
+        if exc and any(err in str(exc) for err in ("10054", "10053", "EndOfStream", "CancelledError")):
+            return
+        try:
+            l.default_exception_handler(ctx)
+        except Exception:
+            pass
+    loop.set_exception_handler(handle_async_exception)
 
     # 1. Initialize Database
     init_db()
@@ -172,17 +192,20 @@ app.include_router(diagnostics_router)
 app.include_router(timetable_router)
 
 # Video Streaming Endpoint (MJPEG)
-def generate_mjpeg_frames():
-    while is_inference_running:
-        with annotated_frame_lock:
-            frame_bytes = latest_annotated_jpeg
-        if frame_bytes:
-            yield (b"--frame\r\n"
-                   b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
-        time.sleep(0.033)  # ~30 FPS
+async def generate_mjpeg_frames():
+    try:
+        while is_inference_running:
+            with annotated_frame_lock:
+                frame_bytes = latest_annotated_jpeg
+            if frame_bytes:
+                yield (b"--frame\r\n"
+                       b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+            await asyncio.sleep(0.033)  # ~30 FPS
+    except (asyncio.CancelledError, GeneratorExit, Exception):
+        pass
 
 @app.get("/api/video/feed")
-def video_feed():
+async def video_feed():
     """Real-time annotated video stream with recognition bounding boxes and HUD watermark."""
     return StreamingResponse(
         generate_mjpeg_frames(),
@@ -206,10 +229,9 @@ async def websocket_endpoint(websocket: WebSocket):
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text(json.dumps({"type": "pong"}))
-    except WebSocketDisconnect:
-        if websocket in active_websockets:
-            active_websockets.remove(websocket)
-    except Exception:
+    except (WebSocketDisconnect, ConnectionResetError, Exception):
+        pass
+    finally:
         if websocket in active_websockets:
             active_websockets.remove(websocket)
 
