@@ -31,6 +31,7 @@ class CameraStream:
         self.frame_count = 0
         self.is_synthetic = False
         self._sim_step = 0
+        self._pending_source: Optional[Any] = None
 
     def _open_capture(self, src: Any) -> Optional[cv2.VideoCapture]:
         """Attempts to open capture device with OS-specific backend fallback."""
@@ -38,10 +39,16 @@ class CameraStream:
         try:
             if isinstance(src, int) or (isinstance(src, str) and str(src).isdigit()):
                 dev_idx = int(src)
-                if hasattr(cv2, 'CAP_DSHOW'):
-                    cap = cv2.VideoCapture(dev_idx, cv2.CAP_DSHOW)
-                if not cap or not cap.isOpened():
+                try:
                     cap = cv2.VideoCapture(dev_idx)
+                except Exception:
+                    cap = None
+                if not cap or not cap.isOpened():
+                    if hasattr(cv2, 'CAP_DSHOW'):
+                        try:
+                            cap = cv2.VideoCapture(dev_idx, cv2.CAP_DSHOW)
+                        except Exception:
+                            cap = None
             else:
                 cap = cv2.VideoCapture(src)
 
@@ -51,7 +58,10 @@ class CameraStream:
                 cap.set(cv2.CAP_PROP_FPS, self.fps_target)
                 return cap
             if cap:
-                cap.release()
+                try:
+                    cap.release()
+                except Exception:
+                    pass
         except Exception as e:
             logger.debug(f"Camera open error for {src}: {e}")
         return None
@@ -84,32 +94,19 @@ class CameraStream:
         self.cap = None
 
     def switch_source(self, new_src: Any) -> bool:
-        """Dynamically switches camera source without restarting background thread."""
+        """Requests dynamic camera source switch executed safely on the acquisition thread."""
+        target = int(new_src) if (isinstance(new_src, str) and str(new_src).isdigit()) else new_src
         with self.lock:
-            if self.cap is not None:
-                try:
-                    self.cap.release()
-                except Exception as e:
-                    logger.debug(f"Error releasing camera: {e}")
-            self.cap = None
-            self.frame = None
+            self._pending_source = target
+            self.src = target
 
-            time.sleep(0.2)
-
-            if isinstance(new_src, str) and new_src.isdigit():
-                self.src = int(new_src)
-            else:
-                self.src = new_src
-
-            self.cap = self._open_capture(self.src)
-            if self.cap and self.cap.isOpened():
-                self.is_synthetic = False
-                logger.info(f"Successfully switched to camera source {self.src}")
-                return True
-            else:
-                self.is_synthetic = True
-                logger.warning(f"Could not open camera {self.src}; reverting to standby mode")
-                return False
+        # Wait up to 3.5s for acquisition loop to complete switch
+        for _ in range(35):
+            time.sleep(0.1)
+            with self.lock:
+                if self._pending_source is None:
+                    return not self.is_synthetic
+        return not self.is_synthetic
 
     def _update_loop(self):
         last_time = time.time()
@@ -121,25 +118,59 @@ class CameraStream:
             start_frame_time = time.time()
             now = time.time()
 
+            # Process pending camera source switch if requested
+            pending = None
+            with self.lock:
+                if self._pending_source is not None:
+                    pending = self._pending_source
+
+            if pending is not None:
+                if self.cap:
+                    try:
+                        self.cap.release()
+                    except Exception:
+                        pass
+                    self.cap = None
+                with self.lock:
+                    self.frame = None
+                time.sleep(0.3)
+                new_cap = self._open_capture(pending)
+                with self.lock:
+                    if new_cap and new_cap.isOpened():
+                        self.cap = new_cap
+                        self.src = pending
+                        self.is_synthetic = False
+                        failed_reads = 0
+                        logger.info(f"Successfully switched to camera source {pending}")
+                    else:
+                        self.cap = None
+                        self.src = pending
+                        self.is_synthetic = True
+                        logger.warning(f"Could not open camera {pending}; running in standby mode")
+                    self._pending_source = None
+
             # If in synthetic/standby mode, periodically re-probe the physical camera
             if self.is_synthetic and (now - last_reconnect_attempt > 3.0):
                 last_reconnect_attempt = now
-                with self.lock:
-                    if self.cap:
-                        try:
-                            self.cap.release()
-                        except Exception:
-                            pass
-                        self.cap = None
-                    new_cap = self._open_capture(self.src)
-                    if new_cap and new_cap.isOpened():
-                        self.cap = new_cap
-                        self.is_synthetic = False
-                        failed_reads = 0
-                        logger.info(f"Live Camera reconnected successfully on source {self.src}")
+                if self.cap:
+                    try:
+                        self.cap.release()
+                    except Exception:
+                        pass
+                    self.cap = None
+                new_cap = self._open_capture(self.src)
+                if new_cap and new_cap.isOpened():
+                    self.cap = new_cap
+                    self.is_synthetic = False
+                    failed_reads = 0
+                    logger.info(f"Live Camera reconnected successfully on source {self.src}")
 
             if not self.is_synthetic and self.cap and self.cap.isOpened():
-                ret, frame = self.cap.read()
+                try:
+                    ret, frame = self.cap.read()
+                except Exception:
+                    ret, frame = False, None
+
                 if ret and frame is not None and frame.size > 0:
                     failed_reads = 0
                     with self.lock:
@@ -149,13 +180,12 @@ class CameraStream:
                     if failed_reads >= 5:
                         logger.warning("Physical camera read failed repeatedly; switching to standby and retrying...")
                         self.is_synthetic = True
-                        with self.lock:
-                            if self.cap:
-                                try:
-                                    self.cap.release()
-                                except Exception:
-                                    pass
-                                self.cap = None
+                        if self.cap:
+                            try:
+                                self.cap.release()
+                            except Exception:
+                                pass
+                            self.cap = None
             else:
                 # Standby test pattern while awaiting camera
                 frame = self._generate_standby_frame()
