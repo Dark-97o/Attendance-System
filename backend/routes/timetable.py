@@ -21,7 +21,7 @@ def get_db():
     return DatabaseManager()
 
 class RoutineCreateRequest(BaseModel):
-    class_name: str = Field(..., description="Target class section, e.g. CSE A")
+    class_name: str = Field(..., description="Target class section, e.g. CSE or ECE")
     day_of_week: str = Field(..., description="Day name, e.g. Monday")
     start_time: str = Field(..., description="Start time in HH:MM format, e.g. 09:00")
     end_time: str = Field(..., description="End time in HH:MM format, e.g. 10:00")
@@ -85,7 +85,7 @@ async def upload_routine_file(
             items = data if isinstance(data, list) else data.get("routines", [])
             for item in items:
                 db.add_timetable_routine(
-                    class_name=item.get("class_name", "CSE A"),
+                    class_name=item.get("class_name", "CSE"),
                     day_of_week=item.get("day_of_week", "Monday"),
                     start_time=item.get("start_time", "09:00"),
                     end_time=item.get("end_time", "10:00"),
@@ -167,7 +167,7 @@ async def get_timetable_status(class_name: Optional[str] = None, db: DatabaseMan
     current_time_str = now.strftime("%H:%M")  # e.g. "09:15"
     current_minutes = now.hour * 60 + now.minute
 
-    all_classes = ["CSE A", "CSE B", "CSE AIML", "CE", "ME", "ECE"]
+    all_classes = ["CSE", "ECE"]
     active_session = db.get_active_session()
     
     # Pre-fetch teachers for quick status matching
@@ -242,7 +242,7 @@ async def get_timetable_status(class_name: Optional[str] = None, db: DatabaseMan
                 "room_number": None
             }
 
-    target_status = class_status_map.get(class_name) if class_name else class_status_map.get("CSE A")
+    target_status = class_status_map.get(class_name) if class_name else class_status_map.get("CSE")
 
     return {
         "success": True,
