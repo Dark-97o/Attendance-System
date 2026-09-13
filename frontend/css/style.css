@@ -1797,11 +1797,16 @@ body {
     border-radius: var(--radius-sm);
     padding: 12px 14px;
     border: 1px solid var(--border-color);
-    display: flex;
-    align-items: center;
-    gap: 12px;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: space-between !important;
+    gap: 10px;
     box-shadow: var(--shadow-sm);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    box-sizing: border-box;
+    overflow: hidden;
+    min-height: 112px;
+    min-width: 0;
 }
 
 .student-presence-card:hover {
