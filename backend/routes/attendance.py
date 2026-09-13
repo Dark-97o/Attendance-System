@@ -138,3 +138,37 @@ def export_attendance_csv(session_id: Optional[int] = None):
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+@router.post("/reset")
+def reset_attendance():
+    """Clears attendance records for the active session (or today) and resets recognition state to allow retaking attendance."""
+    ctx = get_context()
+    att_mgr = ctx["attendance_manager"]
+    db = ctx["db"]
+    
+    # Reset dwell and debounce tracker so faces are detected afresh
+    att_mgr.student_track_state.clear()
+    cleared_count = 0
+
+    if att_mgr.active_session:
+        session_id = att_mgr.active_session["id"]
+        with db._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM attendance_records WHERE session_id = ?", (session_id,))
+            cleared_count = cursor.rowcount
+            conn.commit()
+    else:
+        with db._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM attendance_records WHERE date(entry_time) = date('now', 'localtime')")
+            cleared_count = cursor.rowcount
+            conn.commit()
+
+    # Notify connected clients via WebSocket
+    att_mgr._broadcast("ATTENDANCE_RESET", {"cleared_count": cleared_count})
+    return {
+        "success": True,
+        "message": "Attendance records cleared and camera tracking reset.",
+        "cleared_count": cleared_count
+    }
+
