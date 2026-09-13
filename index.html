@@ -9,9 +9,32 @@
     <!-- Font Awesome 6 Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Stylesheet -->
-    <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/style.css?v=6.1">
     <!-- Chart.js for analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Prevent Live Server on port 5500 from auto-reloading when SQLite database commits
+        if (window.location.port === '5500') {
+            const _OrigWebSocket = window.WebSocket;
+            window.WebSocket = function(url, protocols) {
+                if (typeof url === 'string' && (url.includes(':5500') || (url.includes('/ws') && !url.includes('/ws/live')))) {
+                    return {
+                        send: () => {},
+                        close: () => {},
+                        addEventListener: () => {},
+                        removeEventListener: () => {},
+                        set onmessage(fn) {},
+                        set onopen(fn) { if (fn) setTimeout(fn, 10); },
+                        set onerror(fn) {},
+                        set onclose(fn) {},
+                        readyState: 1
+                    };
+                }
+                return new _OrigWebSocket(url, protocols);
+            };
+            window.WebSocket.prototype = _OrigWebSocket.prototype;
+        }
+    </script>
 </head>
 <body>
     <div class="app-container">
@@ -213,29 +236,14 @@
                      ========================================================================== -->
                 <section class="tab-pane active" id="tab-kiosk">
                     <div class="kiosk-grid">
-                        <!-- Left Column: Video Viewport & Teacher Session Controls -->
+                        <!-- Left Column: Video Viewport & Compact Camera Switch Controls -->
                         <div class="video-column">
-                            <!-- Lecture Session Status Banner -->
-                            <div class="teacher-banner session-inactive" id="teacherBanner">
-                                <div class="banner-info">
-                                    <div class="banner-icon" id="bannerIcon"><i class="fa-solid fa-lock"></i></div>
-                                    <div class="banner-details">
-                                        <h3 id="bannerTitle">Lecture Session Inactive</h3>
-                                        <p id="bannerSub">Click "Start Lecture" to begin live attendance logging</p>
-                                    </div>
-                                </div>
-                                <div>
-                                    <button class="fp-action-btn" id="btnToggleSession" style="background: linear-gradient(135deg, #10b981, #059669);">
-                                        <i class="fa-solid fa-play"></i> Start Lecture
-                                    </button>
-                                </div>
-                            </div>
-
                             <!-- Live Camera Viewport -->
                             <div class="video-viewport" id="videoViewport">
                                 <img id="liveVideoFeed" src="/api/video/feed" alt="Real-Time Annotated Edge Camera Feed" loading="eager">
                                 <video id="webcamVideo" autoplay playsinline muted style="display: none; width: 100%; height: 100%; object-fit: cover;"></video>
                                 
+                                <!-- Top-Left Status Badges -->
                                 <div class="video-overlay-badges">
                                     <span class="badge" id="badgeCamFps">30 FPS</span>
                                     <span class="badge" id="badgeCamStatus" style="color: #10b981;">LIVE STREAM</span>
@@ -243,128 +251,110 @@
                                     <span class="badge" style="color: #38bdf8; display: none;" id="badgeWebcamLive">BROWSER WEBCAM</span>
                                 </div>
 
-                                <div class="video-controls">
-                                    <button class="btn-ctrl" id="btnToggleCam" title="Switch hardware camera source"><i class="fa-solid fa-arrows-rotate"></i> Switch Camera</button>
-                                    <button class="btn-ctrl" id="btnToggleWebcam" title="Toggle browser direct webcam feed"><i class="fa-solid fa-camera"></i> Browser Webcam</button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Right Column: KPI Cards & Live Attendance Feed -->
-                        <div class="data-column">
-                            <!-- Top KPI Row -->
-                            <div class="kpi-row">
-                                <div class="kpi-card kpi-present">
-                                    <div class="kpi-label">Present Now</div>
-                                    <div class="kpi-value" id="kpiPresentCount">0</div>
-                                    <div class="kpi-sub">Verified Students</div>
-                                </div>
-                                <div class="kpi-card">
-                                    <div class="kpi-label">Enrolled Total</div>
-                                    <div class="kpi-value" id="kpiEnrolledCount">0</div>
-                                    <div class="kpi-sub">Class Roster</div>
-                                </div>
-                                <div class="kpi-card kpi-rate">
-                                    <div class="kpi-label">Attendance Rate</div>
-                                    <div class="kpi-value" id="kpiAttendanceRate">0%</div>
-                                    <div class="kpi-sub">Active Session</div>
-                                </div>
-                            </div>
-
-                            <!-- Live Real-Time Attendance Feed -->
-                            <div class="feed-card">
-                                <div class="feed-header">
-                                    <h3><i class="fa-solid fa-bolt" style="color: var(--accent-amber);"></i> Live Attendance Ticker</h3>
-                                    <span style="font-size: 0.72rem; color: var(--text-muted);">Real-Time WebSocket Feed</span>
-                                </div>
-                                <div class="feed-container" id="attendanceFeed">
-                                    <!-- Feed Items Dynamically Injected by App.js -->
-                                    <div class="feed-item" id="feedEmptyState" style="opacity: 0.75; justify-content: center; text-align: center; padding: 24px;">
-                                        <div class="student-meta" style="flex-direction: column; align-items: center; gap: 8px;">
-                                            <div class="student-avatar" style="font-size: 1.2rem;"><i class="fa-solid fa-video"></i></div>
-                                            <div class="student-info" style="text-align: center;">
-                                                <h4 style="color: #64748b;">Live Attendance Standby</h4>
-                                                <p>Start a lecture session to begin live face recognition & logging</p>
-                                            </div>
-                                        </div>
+                                <!-- Top-Right Compact Camera Switcher Overlay -->
+                                <div class="video-overlay-camera-ctrls" id="videoOverlayCameraCtrls">
+                                    <div style="position: relative; display: flex; align-items: center;">
+                                        <i class="fa-solid fa-camera" style="position: absolute; left: 7px; font-size: 0.7rem; color: #94a3b8; pointer-events: none;"></i>
+                                        <select id="liveCameraSelect" class="overlay-cam-select" title="Select Connected Camera">
+                                            <option value="edge-0" selected>Camera 0 (Default)</option>
+                                        </select>
                                     </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- ==========================================================================
-                         CLASS-WISE LIVE PRESENCE & TIMETABLE ROUTINE MONITOR
-                         ========================================================================== -->
-                    <div style="margin-top: 24px;">
-                        <div class="feed-card" style="padding: 22px;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
-                                <div>
-                                    <h3 style="margin: 0; font-size: 1.15rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
-                                        <i class="fa-solid fa-users-viewfinder" style="color: var(--accent-indigo);"></i>
-                                        <span>Class-Wise Live Presence & Routine Monitor</span>
-                                    </h3>
-                                    <p style="margin: 4px 0 0 0; font-size: 0.78rem; color: var(--text-muted);">
-                                        Live student presence tracking (🟢 Present / 🔴 Absent) and timetable faculty status with 5-minute late alert.
-                                    </p>
-                                </div>
-                                
-                                <div style="display: flex; gap: 8px; align-items: center;">
-                                    <button type="button" class="btn-ctrl" id="btnOpenEmailModal" style="padding: 8px 14px; font-size: 0.8rem; font-weight: 700; background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.08)); border: 1px solid rgba(79, 70, 229, 0.3); color: var(--accent-indigo);">
-                                        <i class="fa-solid fa-envelope-circle-check"></i> Send Daily Summary Emails
+                                    <button type="button" class="overlay-cam-btn" id="btnLiveQuickSwitch" title="Switch to next camera">
+                                        <i class="fa-solid fa-arrows-rotate"></i>
+                                        <span>Next</span>
+                                    </button>
+                                    <button type="button" class="overlay-cam-btn-icon" id="btnLiveRefreshCams" title="Scan for connected cameras">
+                                        <i class="fa-solid fa-rotate"></i>
                                     </button>
                                 </div>
                             </div>
+                        </div>
 
-                            <!-- Class Selection Filter Tabs -->
-                            <div class="class-filter-bar">
-                                <span style="font-size: 0.75rem; font-weight: 700; color: #64748b; margin-right: 4px;"><i class="fa-solid fa-filter"></i> Select Class:</span>
-                                <button type="button" class="btn-class-pill active" data-class="ALL" id="btnClassALL"><i class="fa-solid fa-layer-group"></i> All Classes</button>
-                                <button type="button" class="btn-class-pill" data-class="CSE A" id="btnClassCSE_A">CSE A</button>
-                                <button type="button" class="btn-class-pill" data-class="CSE B" id="btnClassCSE_B">CSE B</button>
-                                <button type="button" class="btn-class-pill" data-class="CSE AIML" id="btnClassCSE_AIML">CSE AIML</button>
-                                <button type="button" class="btn-class-pill" data-class="CE" id="btnClassCE">CE</button>
-                                <button type="button" class="btn-class-pill" data-class="ME" id="btnClassME">ME</button>
-                                <button type="button" class="btn-class-pill" data-class="ECE" id="btnClassECE">ECE</button>
-                            </div>
-
-                            <!-- Active Lecture & Scheduled Teacher Presence Card (Blinks Yellow if Teacher is >5 mins late) -->
-                            <div class="teacher-presence-card" id="teacherPresenceCard">
-                                <div style="display: flex; align-items: center; gap: 14px;">
-                                    <div id="teacherAvatarBox" style="width: 46px; height: 46px; border-radius: 12px; background: #e0e7ff; color: var(--accent-indigo); display: flex; align-items: center; justify-content: center; font-size: 1.3rem; border: 1px solid #c7d2fe;">
-                                        <i class="fa-solid fa-chalkboard-user"></i>
-                                    </div>
+                        <!-- Right Column: Class-Wise Live Presence & Timetable Routine Monitor -->
+                        <div class="data-column">
+                            <div class="feed-card class-dashboard-card" style="padding: 18px 20px; height: auto;">
+                                <!-- Dashboard Header with Lecture Session Button & Email Trigger -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
                                     <div>
-                                        <div style="display: flex; align-items: center; gap: 8px;">
-                                            <h4 style="margin: 0; font-size: 1rem; font-weight: 800; color: #0f172a;" id="activeTeacherName">Scheduled Faculty</h4>
-                                            <span class="badge" style="font-size: 0.7rem; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;" id="activeTimeSlotBadge">No Active Slot</span>
-                                        </div>
-                                        <p style="margin: 3px 0 0 0; font-size: 0.78rem; color: var(--text-muted);" id="activeSubjectDesc">
-                                            Lecture Subject: <strong id="activeSubjectName">Standby / Unscheduled</strong> | Room: <span id="activeRoomName">Room 101</span>
+                                        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                                            <i class="fa-solid fa-users-viewfinder" style="color: var(--accent-indigo);"></i>
+                                            <span>Class-Wise Live Presence</span>
+                                        </h3>
+                                        <p style="margin: 3px 0 0 0; font-size: 0.75rem; color: var(--text-muted);">
+                                            Real-time student detection & routine monitor
                                         </p>
                                     </div>
-                                </div>
-                                
-                                <div id="teacherPresenceBadgeContainer">
-                                    <span class="badge-status-absent" id="teacherPresenceBadge" style="font-size: 0.82rem; padding: 6px 14px;">
-                                        <i class="fa-solid fa-clock"></i> TEACHER NOT PRESENT
-                                    </span>
-                                </div>
-                            </div>
-
-                            <!-- Live Enrolled Students Presence Grid -->
-                            <div>
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-                                    <h4 style="margin: 0; font-size: 0.92rem; font-weight: 700; color: #334155;">
-                                        <i class="fa-solid fa-user-check"></i> Class Student Roster Presence:
-                                    </h4>
-                                    <div style="font-size: 0.8rem; font-weight: 700; color: #64748b;">
-                                        Present: <span style="color: #10b981; font-weight: 800;" id="classPresentCount">0</span> / Enrolled: <span id="classTotalCount" style="font-weight: 800;">0</span>
+                                    
+                                    <div style="display: flex; gap: 8px; align-items: center;">
+                                        <button class="fp-action-btn" id="btnToggleSession" style="background: linear-gradient(135deg, #10b981, #059669); padding: 7px 14px; font-size: 0.8rem; font-weight: 700;">
+                                            <i class="fa-solid fa-play"></i> Start Lecture
+                                        </button>
+                                        <button type="button" class="btn-ctrl" id="btnResetAttendance" title="Reset and Retake Attendance" style="padding: 7px 12px; font-size: 0.78rem; font-weight: 700; background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48; cursor: pointer; border-radius: 8px; transition: all 0.2s ease;">
+                                            <i class="fa-solid fa-rotate-left"></i> Retake Attendance
+                                        </button>
+                                        <button type="button" class="btn-ctrl" id="btnOpenEmailModal" title="Send Daily Summary Emails" style="padding: 7px 12px; font-size: 0.78rem; font-weight: 700; background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.08)); border: 1px solid rgba(79, 70, 229, 0.3); color: var(--accent-indigo);">
+                                            <i class="fa-solid fa-envelope-circle-check"></i> Summary
+                                        </button>
                                     </div>
                                 </div>
 
-                                <div class="live-student-grid" id="liveStudentsPresenceGrid">
-                                    <div style="text-align: center; color: #94a3b8; grid-column: 1 / -1; padding: 24px;">Loading class roster presence...</div>
+                                <!-- Lecture Session Status Mini-Banner -->
+                                <div class="teacher-banner session-inactive" id="teacherBanner" style="margin-bottom: 12px; padding: 8px 12px;">
+                                    <div class="banner-info" style="gap: 10px;">
+                                        <div class="banner-icon" id="bannerIcon" style="width: 32px; height: 32px; font-size: 1rem;"><i class="fa-solid fa-lock"></i></div>
+                                        <div class="banner-details">
+                                            <h4 id="bannerTitle" style="font-size: 0.85rem; margin: 0; font-weight: 700;">Lecture Session Inactive</h4>
+                                            <p id="bannerSub" style="margin: 2px 0 0 0; font-size: 0.73rem; color: #64748b;">Click "Start Lecture" to begin live attendance logging</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Class Selection Filter Tabs -->
+                                <div class="class-filter-bar" style="margin-bottom: 12px;">
+                                    <span style="font-size: 0.74rem; font-weight: 700; color: #64748b; margin-right: 4px;"><i class="fa-solid fa-filter"></i> Class:</span>
+                                    <button type="button" class="btn-class-pill active" data-class="ALL" id="btnClassALL"><i class="fa-solid fa-layer-group"></i> All</button>
+                                    <button type="button" class="btn-class-pill" data-class="CSE" id="btnClassCSE">CSE</button>
+                                    <button type="button" class="btn-class-pill" data-class="ECE" id="btnClassECE">ECE</button>
+                                </div>
+
+                                <!-- Active Lecture & Scheduled Teacher Presence Card (Blinks Yellow if Teacher is >5 mins late) -->
+                                <div class="teacher-presence-card" id="teacherPresenceCard" style="margin-bottom: 12px;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <div id="teacherAvatarBox" style="width: 38px; height: 38px; border-radius: 10px; background: #e0e7ff; color: var(--accent-indigo); display: flex; align-items: center; justify-content: center; font-size: 1.15rem; border: 1px solid #c7d2fe; flex-shrink: 0;">
+                                            <i class="fa-solid fa-chalkboard-user"></i>
+                                        </div>
+                                        <div>
+                                            <div style="display: flex; align-items: center; gap: 8px;">
+                                                <h4 style="margin: 0; font-size: 0.9rem; font-weight: 800; color: #0f172a;" id="activeTeacherName">Scheduled Faculty</h4>
+                                                <span class="badge" style="font-size: 0.68rem; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;" id="activeTimeSlotBadge">No Active Slot</span>
+                                            </div>
+                                            <p style="margin: 2px 0 0 0; font-size: 0.74rem; color: var(--text-muted);" id="activeSubjectDesc">
+                                                Lecture Subject: <strong id="activeSubjectName">Standby / Unscheduled</strong> | Room: <span id="activeRoomName">Room 101</span>
+                                            </p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div id="teacherPresenceBadgeContainer">
+                                        <span class="badge-status-absent" id="teacherPresenceBadge" style="font-size: 0.76rem; padding: 5px 12px;">
+                                            <i class="fa-solid fa-clock"></i> TEACHER NOT PRESENT
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- Live Enrolled Students Presence Grid -->
+                                <div>
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                        <h4 style="margin: 0; font-size: 0.88rem; font-weight: 700; color: #334155;">
+                                            <i class="fa-solid fa-user-check"></i> Class Student Roster Presence:
+                                        </h4>
+                                        <div style="font-size: 0.78rem; font-weight: 700; color: #64748b;">
+                                            Present: <span style="color: #10b981; font-weight: 800;" id="classPresentCount">0</span> / Enrolled: <span id="classTotalCount" style="font-weight: 800;">0</span>
+                                        </div>
+                                    </div>
+
+                                    <div class="live-student-grid" id="liveStudentsPresenceGrid" style="max-height: 380px; overflow-y: auto; padding-right: 4px;">
+                                        <div style="text-align: center; color: #94a3b8; grid-column: 1 / -1; padding: 24px;">Loading class roster presence...</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -458,16 +448,16 @@
                                     <!-- Desired Camera Switcher Toolbar -->
                                     <div class="enroll-camera-toolbar" style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center; background: #f8fafc; padding: 8px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-color);">
                                         <label for="enrollCameraSelect" style="font-size: 0.8rem; font-weight: 700; color: #475569; white-space: nowrap; margin: 0; display: flex; align-items: center; gap: 6px;">
-                                            <i class="fa-solid fa-video" style="color: var(--accent-indigo);"></i> Camera:
+                                            <i class="fa-solid fa-video" style="color: var(--accent-indigo);"></i> Active Camera:
                                         </label>
-                                        <select id="enrollCameraSelect" class="form-control" style="padding: 6px 10px; font-size: 0.82rem; font-weight: 600; flex: 1; border: 1px solid #cbd5e1; border-radius: 6px;">
-                                            <option value="0" selected>Camera 0 (Default Edge Cam)</option>
-                                            <option value="1">Camera 1 (USB / External Cam)</option>
-                                            <option value="2">Camera 2 (Secondary Cam)</option>
-                                            <option value="webcam">Browser Live Webcam</option>
+                                        <select id="enrollCameraSelect" class="form-control" style="padding: 6px 10px; font-size: 0.82rem; font-weight: 600; flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer;">
+                                            <option value="edge-0" selected>Camera 0 (Default Edge Cam)</option>
                                         </select>
-                                        <button type="button" class="btn-ctrl" id="btnEnrollToggleCam" title="Quick Switch Camera" style="padding: 6px 12px; font-size: 0.82rem; font-weight: 600; white-space: nowrap; background: rgba(79, 70, 229, 0.08); border: 1px solid rgba(79, 70, 229, 0.2); color: var(--accent-indigo);">
-                                            <i class="fa-solid fa-arrows-rotate"></i> Switch Feed
+                                        <button type="button" class="btn-ctrl" id="btnEnrollToggleCam" title="Switch to next camera" style="padding: 6px 12px; font-size: 0.82rem; font-weight: 600; white-space: nowrap; background: rgba(79, 70, 229, 0.08); border: 1px solid rgba(79, 70, 229, 0.2); color: var(--accent-indigo);">
+                                            <i class="fa-solid fa-arrows-rotate"></i> Next Cam
+                                        </button>
+                                        <button type="button" class="btn-ctrl" id="btnEnrollRefreshCam" title="Scan for connected cameras" style="padding: 6px 10px; font-size: 0.8rem; color: #64748b;">
+                                            <i class="fa-solid fa-rotate"></i>
                                         </button>
                                     </div>
 
@@ -522,26 +512,17 @@
 
                                         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                                             <div class="form-group">
-                                                <label for="enrollRoll">Roll Number *</label>
-                                                <input type="text" id="enrollRoll" class="form-control" placeholder="e.g. CS-101" required>
-                                            </div>
-                                            <div class="form-group">
                                                 <label for="enrollSection">Class / Department *</label>
                                                 <select id="enrollSection" class="form-control" required style="font-weight: 600;">
                                                     <option value="" disabled selected>Select Class / Department</option>
-                                                    <option value="CSE A">CSE A</option>
-                                                    <option value="CSE B">CSE B</option>
-                                                    <option value="CSE AIML">CSE AIML</option>
-                                                    <option value="CE">CE</option>
-                                                    <option value="ME">ME</option>
+                                                    <option value="CSE">CSE</option>
                                                     <option value="ECE">ECE</option>
                                                 </select>
                                             </div>
-                                        </div>
-
-                                        <div class="form-group">
-                                            <label for="enrollEmail">Student Institutional Email *</label>
-                                            <input type="email" id="enrollEmail" class="form-control" placeholder="e.g. student@campus.edu" required>
+                                            <div class="form-group">
+                                                <label for="enrollEmail">Student Institutional Email *</label>
+                                                <input type="email" id="enrollEmail" class="form-control" placeholder="e.g. student@campus.edu" required>
+                                            </div>
                                         </div>
 
                                         <div class="form-group">
@@ -577,9 +558,6 @@
                                                 <select id="enrollTeacherDept" class="form-control" required style="font-weight: 600;">
                                                     <option value="" disabled selected>Select Department</option>
                                                     <option value="CSE">Computer Science & Engineering (CSE)</option>
-                                                    <option value="CSE AIML">CSE (AI & Machine Learning)</option>
-                                                    <option value="CE">Civil Engineering (CE)</option>
-                                                    <option value="ME">Mechanical Engineering (ME)</option>
                                                     <option value="ECE">Electronics & Communication (ECE)</option>
                                                 </select>
                                             </div>
@@ -614,11 +592,7 @@
                                                 <div class="form-group">
                                                     <label for="routineClass">Class / Department *</label>
                                                     <select id="routineClass" class="form-control" required style="font-weight: 600;">
-                                                        <option value="CSE A" selected>CSE A</option>
-                                                        <option value="CSE B">CSE B</option>
-                                                        <option value="CSE AIML">CSE AIML</option>
-                                                        <option value="CE">CE</option>
-                                                        <option value="ME">ME</option>
+                                                        <option value="CSE" selected>CSE</option>
                                                         <option value="ECE">ECE</option>
                                                     </select>
                                                 </div>
@@ -717,11 +691,7 @@
                                             </select>
                                             <select id="filterRoutineClass" class="form-control" style="font-size: 0.78rem; padding: 4px 8px; width: auto;">
                                                 <option value="">All Classes</option>
-                                                <option value="CSE A">CSE A</option>
-                                                <option value="CSE B">CSE B</option>
-                                                <option value="CSE AIML">CSE AIML</option>
-                                                <option value="CE">CE</option>
-                                                <option value="ME">ME</option>
+                                                <option value="CSE">CSE</option>
                                                 <option value="ECE">ECE</option>
                                             </select>
                                             <button type="button" class="btn-ctrl" id="btnRefreshTimetable" style="padding: 4px 10px; font-size: 0.76rem;">
@@ -882,8 +852,8 @@
     <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
 
     <!-- Application Script & Firebase Integration -->
-    <script type="module" src="./js/firebase.js?v=5.0"></script>
-    <script src="./js/charts.js?v=5.0"></script>
-    <script src="./js/app.js?v=5.0"></script>
+    <script type="module" src="./js/firebase.js?v=6.1"></script>
+    <script src="./js/charts.js?v=6.1"></script>
+    <script src="./js/app.js?v=6.1"></script>
 </body>
 </html>
