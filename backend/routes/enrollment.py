@@ -21,8 +21,8 @@ def get_context():
 class RegisterStudentRequest(BaseModel):
     student_id: str
     name: str
-    roll_number: str
-    class_section: str
+    roll_number: Optional[str] = None
+    class_section: str = "CSE"
     email: Optional[str] = None
 
 class RegisterTeacherRequest(BaseModel):
@@ -62,7 +62,7 @@ def register_student(req: RegisterStudentRequest):
     success = db.register_student(
         student_id=req.student_id,
         name=req.name,
-        roll_number=req.roll_number,
+        roll_number=req.roll_number or req.student_id,
         class_section=req.class_section,
         email=req.email
     )
@@ -151,7 +151,7 @@ async def enroll_face_from_upload(
         sid = student_id or f"S_{int(time.time())}"
         sname = name or f"Student {sid}"
         sroll = roll_number or sid
-        ssec = class_section or "CSE A"
+        ssec = class_section or "CSE"
         semail = email or None
         photo_filename = f"{sid}_{int(time.time())}.jpg"
         photo_path = os.path.join(faces_dir, photo_filename)
@@ -209,7 +209,7 @@ def snap_and_enroll(payload: Dict[str, Any]):
         sid = payload.get("student_id") or payload.get("id") or f"S_{int(time.time())}"
         sname = payload.get("name") or f"Student {sid}"
         sroll = payload.get("roll_number") or sid
-        ssec = payload.get("class_section") or "CSE A"
+        ssec = payload.get("class_section") or "CSE"
         semail = payload.get("email") or None
 
         photo_filename = f"{sid}_{int(time.time())}.jpg"
