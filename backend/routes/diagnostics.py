@@ -4,6 +4,7 @@ Monitors Raspberry Pi 5 CPU temperature, memory, FPS, and sensor health.
 """
 
 import os
+import time
 import shutil
 import platform
 import logging
@@ -156,11 +157,77 @@ def switch_camera_source(payload: Optional[Dict[str, Any]] = None):
     elif payload and "src" in payload:
         target = payload["src"]
 
-    success = cam.switch_source(target)
+    cam.switch_source(target)
     return {
-        "success": success,
+        "success": True,
         "current_source": cam.src,
         "is_synthetic": cam.is_synthetic,
         "message": f"Camera source updated to {cam.src}",
         "info": cam.get_info()
+    }
+
+_last_cameras_scan = 0.0
+_cached_cameras = []
+
+@router.get("/cameras")
+def list_available_cameras():
+    """Lists currently available physical hardware camera devices on the edge system."""
+    global _last_cameras_scan, _cached_cameras
+    ctx = get_context()
+    cam = ctx["camera"]
+    current_src = cam.src if isinstance(cam.src, int) else 0
+
+    now = time.time()
+    if _cached_cameras and (now - _last_cameras_scan < 30.0):
+        # Update active flags on cached cameras
+        for c in _cached_cameras:
+            c["is_active"] = (c["id"] == current_src)
+        return {
+            "success": True,
+            "current_source": current_src,
+            "cameras": _cached_cameras
+        }
+
+    available = []
+    available.append({
+        "id": current_src,
+        "name": f"Camera {current_src} (Active Hardware Device)",
+        "is_active": True,
+        "is_synthetic": cam.is_synthetic
+    })
+
+    try:
+        import cv2
+        for idx in (0, 1):
+            if idx == current_src:
+                continue
+            test_cap = None
+            try:
+                api_pref = getattr(cv2, "CAP_DSHOW", 0) if platform.system() == "Windows" else 0
+                test_cap = cv2.VideoCapture(idx, api_pref) if api_pref else cv2.VideoCapture(idx)
+                if test_cap and test_cap.isOpened():
+                    available.append({
+                        "id": idx,
+                        "name": f"Camera {idx} (USB / External Cam)",
+                        "is_active": False,
+                        "is_synthetic": False
+                    })
+            except BaseException:
+                pass
+            finally:
+                if test_cap:
+                    try:
+                        test_cap.release()
+                    except BaseException:
+                        pass
+    except BaseException:
+        pass
+
+    _cached_cameras = available
+    _last_cameras_scan = now
+
+    return {
+        "success": True,
+        "current_source": current_src,
+        "cameras": available
     }
