@@ -810,6 +810,9 @@ const App = {
             }
             this.renderLiveClassPresence();
             this.showToast("Attendance reset! Ready to retake.", "info");
+        } else if (msg.type === "SPOOF_DETECTED") {
+            const reason = (msg.payload && msg.payload.reason) ? msg.payload.reason : "Phone/Screen Photo";
+            this.showToast(`⚠ Proxy Attempt Blocked: ${reason}`, "error");
         }
     },
 

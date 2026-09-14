@@ -13,7 +13,8 @@ import numpy as np
 from typing import List, Dict, Tuple, Optional, Any
 from database.models import DatabaseManager
 from engine.preprocessor import LightingPreprocessor
-from engine.tracker import MultiFaceTracker, TrackedFace
+from engine.tracker import MultiFaceTracker, TrackedFace, calculate_iou
+from engine.liveness import LivenessDetector
 
 logger = logging.getLogger("attendance.face_engine")
 
@@ -28,6 +29,7 @@ class FaceEngine:
 
         self.preprocessor = LightingPreprocessor()
         self.tracker = MultiFaceTracker(max_disappeared=15, iou_threshold=0.3)
+        self.liveness_detector = LivenessDetector()
 
         # Initialize Haar Cascade Fallback
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -275,6 +277,27 @@ class FaceEngine:
                 if face_crop.size == 0:
                     continue
 
+                # Extract landmark coordinates (YuNet: [x,y,w,h, re_x, re_y, le_x, le_y, nt_x, nt_y, rc_x, rc_y, lc_x, lc_y, score])
+                raw_lms = None
+                if landmark_data is not None and len(landmark_data) >= 14:
+                    raw_lms = np.array(landmark_data[4:14], dtype=np.float32)
+
+                # Find previous landmark history from existing track for biological micro-movement check
+                matched_history = []
+                for existing_tf in self.tracker.tracked_faces.values():
+                    if calculate_iou(existing_tf.bbox, bbox) > 0.3:
+                        matched_history = list(existing_tf.landmark_history)
+                        break
+
+                # Passive multi-layer liveness evaluation (Moiré, Screen Bezel, Biological Micro-Movement)
+                liveness_result = self.liveness_detector.evaluate_face_liveness(
+                    face_crop=face_crop,
+                    raw_landmarks=raw_lms,
+                    bbox=bbox,
+                    full_frame=enhanced_frame,
+                    landmark_history=matched_history
+                )
+
                 # Extract SFace 128D deep embedding
                 emb = self.extract_face_embedding(face_crop, landmark_face=landmark_data, full_image=enhanced_frame)
                 sid, conf, meta = self.identify_face(emb)
@@ -283,7 +306,9 @@ class FaceEngine:
                     "bbox": (x, y, bw, bh),
                     "identity": sid,
                     "confidence": conf,
-                    "metadata": meta
+                    "metadata": meta,
+                    "landmarks": raw_lms,
+                    "liveness": liveness_result
                 })
 
             # Update tracker
@@ -300,18 +325,26 @@ class FaceEngine:
             sid = tf.identity
             conf = tf.confidence
             meta = self.student_metadata.get(sid) if sid else None
+            is_live = getattr(tf, 'is_live', True)
+            liveness_reason = getattr(tf, 'liveness_reason', '')
 
-            if sid and meta and conf >= self.similarity_threshold:
+            if not is_live:
+                # ⚠ PRESENTATION ATTACK / PHONE SCREEN SPOOF DETECTED
+                box_color = (0, 0, 235)  # High-vis Alert Red
+                label = "⚠ SPOOF DETECTED"
+                sub_label = f"Proxy Blocked: {liveness_reason}"
+                # CRITICAL SECURITY GATE: Exclude from recognized_students! Attendance will NOT be marked.
+            elif sid and meta and conf >= self.similarity_threshold:
                 active_session = self.db.get_active_session()
                 if active_session:
-                    # Lecture Active: Student Verified & Marked
+                    # Lecture Active: Student Verified Live & Present
                     box_color = (46, 204, 113)  # Emerald Green
-                    label = f"✓ {meta['name']} (PRESENT)"
+                    label = f"✓ {meta['name']} [LIVE]"
                     sub_label = f"Match: {int(conf * 100)}% | Roll: {meta['roll_number']}"
                 else:
-                    # Lecture Inactive: Face Recognized, Session Pending
+                    # Lecture Inactive: Face Recognized Live, Session Pending
                     box_color = (0, 215, 255)  # Cyan/Gold
-                    label = f"• {meta['name']} (Enrolled)"
+                    label = f"• {meta['name']} [LIVE]"
                     sub_label = f"Session Inactive | Match: {int(conf * 100)}%"
                 
                 recognized_students.append({
@@ -321,12 +354,13 @@ class FaceEngine:
                     "class_section": meta["class_section"],
                     "confidence": conf,
                     "track_id": tf.track_id,
-                    "frames_active": tf.frames_active
+                    "frames_active": tf.frames_active,
+                    "is_live": True
                 })
             else:
                 # Unknown / Unenrolled face (Amber Warning box)
                 box_color = (0, 165, 255)
-                label = "Unregistered Face"
+                label = "Unregistered Face [LIVE]"
                 sub_label = f"Match: {int(conf * 100)}% (Req: {int(self.similarity_threshold * 100)}%)" if conf > 0 else "Center face in frame"
 
             # Draw sleek HUD corners & bounding box
@@ -335,9 +369,9 @@ class FaceEngine:
         return annotated_frame, recognized_students, light_metrics
 
     def _draw_hud_box(self, img: np.ndarray, bbox: Tuple[int, int, int, int], color: tuple, label: str, sub_label: str):
-        """Draws modern corner-bracket HUD elements around faces."""
+        """Draws modern corner-bracket HUD elements around faces with dual banners."""
         x, y, w, h = bbox
-        corner_len = min(20, w // 4, h // 4)
+        corner_len = min(22, max(12, w // 4), max(12, h // 4))
         thickness = 2
 
         # Primary box with rounded feel / corners
@@ -357,11 +391,20 @@ class FaceEngine:
         cv2.line(img, (x + w, y + h), (x + w - corner_len, y + h), color, thickness)
         cv2.line(img, (x + w, y + h), (x + w, y + h - corner_len), color, thickness)
 
-        # Label Banner
-        banner_y = max(y - 28, 10)
-        cv2.rectangle(img, (x, banner_y), (x + max(200, w), banner_y + 24), (20, 20, 25), -1)
-        cv2.rectangle(img, (x, banner_y), (x + max(200, w), banner_y + 24), color, 1)
+        # Top Label Banner
+        banner_w = max(220, w, len(label) * 10)
+        banner_y = max(y - 26, 4)
+        cv2.rectangle(img, (x, banner_y), (x + banner_w, banner_y + 22), (18, 18, 24), -1)
+        cv2.rectangle(img, (x, banner_y), (x + banner_w, banner_y + 22), color, 1)
         cv2.putText(img, label, (x + 6, banner_y + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+        # Bottom Sub-label Banner (for Match %, Roll No, or Spoof Diagnostics)
+        if sub_label:
+            sub_w = max(200, w, len(sub_label) * 7)
+            sub_y = min(img.shape[0] - 22, y + h + 4)
+            cv2.rectangle(img, (x, sub_y), (x + sub_w, sub_y + 18), (18, 18, 24), -1)
+            cv2.rectangle(img, (x, sub_y), (x + sub_w, sub_y + 18), color, 1)
+            cv2.putText(img, sub_label, (x + 5, sub_y + 13), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (220, 220, 220), 1)
 
     def enroll_face_image(self, student_id: str, image_bgr: np.ndarray) -> Tuple[bool, str]:
         """Detects face in provided image, aligns facial landmarks, and stores SFace deep embedding into database."""

@@ -113,6 +113,18 @@ def background_inference_loop():
         if recognized_students:
             att_mgr.process_recognized_students(recognized_students)
 
+        # Broadcast newly detected spoof attempts to instructor UI
+        for tf in getattr(face_eng, "last_tracked_faces", []):
+            if not getattr(tf, "is_live", True) and getattr(tf, "consecutive_spoof_frames", 0) == 1:
+                spoof_reason = getattr(tf, "liveness_reason", "Photo / Screen Spoof")
+                if "Live" not in spoof_reason and "Evaluating" not in spoof_reason:
+                    logger.warning(f"Anti-Spoof Alert: Presentation attack blocked ({spoof_reason})")
+                    broadcast_ws_event("SPOOF_DETECTED", {
+                        "track_id": tf.track_id,
+                        "reason": spoof_reason,
+                        "timestamp": time.strftime("%H:%M:%S")
+                    })
+
         # Draw session active banner on video feed
         session_status = att_mgr.get_session_status()
         h, w = annotated_frame.shape[:2]

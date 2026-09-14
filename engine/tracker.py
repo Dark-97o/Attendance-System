@@ -22,7 +22,7 @@ def calculate_iou(boxA: Tuple[int, int, int, int], boxB: Tuple[int, int, int, in
     return float(iou)
 
 class TrackedFace:
-    def __init__(self, track_id: int, bbox: Tuple[int, int, int, int], identity: Optional[str] = None, confidence: float = 0.0):
+    def __init__(self, track_id: int, bbox: Tuple[int, int, int, int], identity: Optional[str] = None, confidence: float = 0.0, landmarks: Optional[np.ndarray] = None):
         self.track_id = track_id
         self.bbox = bbox
         self.identity = identity
@@ -35,7 +35,18 @@ class TrackedFace:
         if identity:
             self.identity_votes[identity] = 1
 
-    def update(self, bbox: Tuple[int, int, int, int], identity: Optional[str] = None, confidence: float = 0.0):
+        # Liveness & anti-spoofing diagnostics
+        self.landmarks = landmarks
+        self.landmark_history: List[np.ndarray] = []
+        if landmarks is not None:
+            self.landmark_history.append(landmarks)
+        self.is_live: bool = True
+        self.liveness_score: float = 1.0
+        self.liveness_reason: str = "Evaluating..."
+        self.consecutive_spoof_frames: int = 0
+        self.consecutive_live_frames: int = 0
+
+    def update(self, bbox: Tuple[int, int, int, int], identity: Optional[str] = None, confidence: float = 0.0, landmarks: Optional[np.ndarray] = None, liveness_info: Optional[Dict[str, Any]] = None):
         self.bbox = bbox
         self.disappeared = 0
         self.frames_active += 1
@@ -44,6 +55,27 @@ class TrackedFace:
             # Majority vote for identity
             self.identity = max(self.identity_votes, key=self.identity_votes.get)
             self.confidence = max(self.confidence, confidence)
+
+        if landmarks is not None:
+            self.landmarks = landmarks
+            self.landmark_history.append(landmarks)
+            if len(self.landmark_history) > 25:
+                self.landmark_history.pop(0)
+
+        if liveness_info:
+            is_live_now = liveness_info.get("is_live", True)
+            self.liveness_score = liveness_info.get("texture_score", 1.0)
+            if not is_live_now:
+                self.consecutive_spoof_frames += 1
+                self.consecutive_live_frames = 0
+                self.is_live = False
+                self.liveness_reason = liveness_info.get("reason", "Spoof Attack")
+            else:
+                self.consecutive_live_frames += 1
+                self.consecutive_spoof_frames = 0
+                self.is_live = True
+                self.liveness_reason = "Verified Live Human"
+
 
 class MultiFaceTracker:
     """Tracks multiple faces across frames using Centroid Distance and IoU."""
@@ -69,7 +101,13 @@ class MultiFaceTracker:
 
         if len(self.tracked_faces) == 0:
             for det in detected_faces:
-                self._register(det["bbox"], det.get("identity"), det.get("confidence", 0.0))
+                self._register(
+                    det["bbox"],
+                    det.get("identity"),
+                    det.get("confidence", 0.0),
+                    landmarks=det.get("landmarks"),
+                    liveness_info=det.get("liveness")
+                )
             return list(self.tracked_faces.values())
 
         # Match existing tracked faces with detected boxes via IoU
@@ -97,7 +135,9 @@ class MultiFaceTracker:
                     self.tracked_faces[track_id].update(
                         det["bbox"],
                         det.get("identity"),
-                        det.get("confidence", 0.0)
+                        det.get("confidence", 0.0),
+                        landmarks=det.get("landmarks"),
+                        liveness_info=det.get("liveness")
                     )
                     matched_existing.add(row)
                     matched_input.add(col)
@@ -112,11 +152,23 @@ class MultiFaceTracker:
         # Handle new detections
         for col, det in enumerate(detected_faces):
             if col not in matched_input:
-                self._register(det["bbox"], det.get("identity"), det.get("confidence", 0.0))
+                self._register(
+                    det["bbox"],
+                    det.get("identity"),
+                    det.get("confidence", 0.0),
+                    landmarks=det.get("landmarks"),
+                    liveness_info=det.get("liveness")
+                )
 
         return list(self.tracked_faces.values())
 
-    def _register(self, bbox: Tuple[int, int, int, int], identity: Optional[str], confidence: float):
-        tf = TrackedFace(self.next_track_id, bbox, identity, confidence)
+    def _register(self, bbox: Tuple[int, int, int, int], identity: Optional[str], confidence: float, landmarks: Optional[np.ndarray] = None, liveness_info: Optional[Dict[str, Any]] = None):
+        tf = TrackedFace(self.next_track_id, bbox, identity, confidence, landmarks=landmarks)
+        if liveness_info:
+            tf.is_live = liveness_info.get("is_live", True)
+            tf.liveness_reason = liveness_info.get("reason", "Evaluating...")
+            tf.liveness_score = liveness_info.get("texture_score", 1.0)
+            if not tf.is_live:
+                tf.consecutive_spoof_frames = 1
         self.tracked_faces[self.next_track_id] = tf
         self.next_track_id += 1
