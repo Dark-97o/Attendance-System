@@ -104,6 +104,50 @@ class AttendanceManager:
             "teacher_present": self.active_session is not None
         }
 
+    def is_student_present(self, student_id: str) -> bool:
+        """Checks if a student is currently logged present in the active session."""
+        if not self.active_session:
+            return False
+        return self.db.is_student_present_in_session(self.active_session["id"], student_id)
+
+    def revoke_student_attendance(self, student_id: str, reason: str = "Mobile Phone / Photo Spoof Detected") -> Optional[Dict[str, Any]]:
+        """
+        Revokes attendance for a student who was previously marked present,
+        reverting their status back to ABSENT.
+        Broadcasts ATTENDANCE_REVOKED to all subscribers / WebSocket clients.
+        """
+        if not self.active_session:
+            return None
+        session_id = self.active_session["id"]
+
+        if not self.db.is_student_present_in_session(session_id, student_id):
+            return None
+
+        # Delete from attendance_records in SQLite database
+        deleted = self.db.delete_attendance_record(session_id, student_id)
+        if not deleted:
+            return None
+
+        # Reset student dwell/tracking state so they don't immediately re-dwell without authenticating properly
+        if student_id in self.student_track_state:
+            del self.student_track_state[student_id]
+
+        meta = self.db.get_student_by_id(student_id)
+        name = meta["name"] if meta else student_id
+
+        logger.warning(f"🚨 ATTENDANCE REVOKED: {name} ({student_id}) reverted to ABSENT. Reason: {reason}")
+        self.db.log_event("ATTENDANCE_REVOKED", f"Attendance revoked for {name} ({student_id}) due to {reason}", metadata={"student_id": student_id, "reason": reason})
+
+        payload = {
+            "student_id": student_id,
+            "student_name": name,
+            "session_id": session_id,
+            "reason": reason,
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+        self._broadcast("ATTENDANCE_REVOKED", payload)
+        return payload
+
     # --- ATTENDANCE PROCESSOR ---
 
     def process_recognized_students(self, recognized_students: List[Dict[str, Any]]):

@@ -134,6 +134,13 @@ class DatabaseManager:
             """)
             return [dict(row) for row in cursor.fetchall()]
 
+    def get_student_by_id(self, student_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM students WHERE student_id = ?", (student_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
     def delete_student(self, student_id: str) -> bool:
         """Deletes a student, their embeddings, attendance records, and photo file."""
         with self._get_conn() as conn:
@@ -289,6 +296,27 @@ class DatabaseManager:
                     "confidence": confidence,
                     "status": status
                 }, True
+
+    def is_student_present_in_session(self, session_id: int, student_id: str) -> bool:
+        """Checks if a student is currently recorded as PRESENT in a lecture session."""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id FROM attendance_records 
+                WHERE session_id = ? AND student_id = ? AND status = 'PRESENT'
+            """, (session_id, student_id))
+            return cursor.fetchone() is not None
+
+    def delete_attendance_record(self, session_id: int, student_id: str) -> bool:
+        """Removes a student's attendance record (reverts to ABSENT)."""
+        with self._get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                DELETE FROM attendance_records 
+                WHERE session_id = ? AND student_id = ?
+            """, (session_id, student_id))
+            conn.commit()
+            return cursor.rowcount > 0
 
     def get_session_attendance(self, session_id: int) -> List[Dict[str, Any]]:
         with self._get_conn() as conn:

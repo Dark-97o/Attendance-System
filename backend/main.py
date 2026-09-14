@@ -120,12 +120,21 @@ def background_inference_loop():
         for tf in getattr(face_eng, "last_tracked_faces", []):
             if getattr(tf, "liveness_state", "") == "SPOOF":
                 spoof_reason = getattr(tf, "liveness_reason", "Photo / Screen Spoof")
+                sid = getattr(tf, "identity", None)
+
+                # CRITICAL SECURITY ENFORCEMENT:
+                # If someone was previously marked PRESENT and after that a mobile/spoof is detected,
+                # immediately revoke their attendance and mark them back to ABSENT!
+                if sid and att_mgr.is_student_present(sid):
+                    att_mgr.revoke_student_attendance(sid, reason=spoof_reason)
+
                 if (now_t - last_spoof_broadcast_time > 2.5) or (spoof_reason != last_spoof_reason):
                     last_spoof_broadcast_time = now_t
                     last_spoof_reason = spoof_reason
                     logger.warning(f"Anti-Spoof Alert: Presentation attack blocked ({spoof_reason})")
                     broadcast_ws_event("SPOOF_DETECTED", {
                         "track_id": tf.track_id,
+                        "student_id": sid,
                         "reason": spoof_reason,
                         "timestamp": time.strftime("%H:%M:%S")
                     })

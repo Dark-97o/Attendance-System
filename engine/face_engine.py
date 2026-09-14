@@ -332,7 +332,8 @@ class FaceEngine:
             if liveness_state == "SPOOF":
                 # ⚠ PRESENTATION ATTACK / PHONE SCREEN SPOOF DETECTED
                 box_color = (0, 0, 240)  # High-vis Alert Red
-                label = "⚠ SPOOF DETECTED"
+                sname = meta['name'] if (sid and meta) else None
+                label = f"⚠ SPOOF: {sname}" if sname else "⚠ SPOOF DETECTED"
                 sub_label = f"Proxy Blocked: {liveness_reason}"
                 # CRITICAL SECURITY GATE: Exclude from recognized_students! Attendance will NOT be marked.
             elif liveness_state == "PENDING":

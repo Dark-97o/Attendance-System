@@ -815,6 +815,22 @@ const App = {
             this.showToast("Attendance reset! Ready to retake.", "info");
         } else if (msg.type === "SPOOF_DETECTED") {
             this.showVideoSecurityAlert(msg.payload);
+        } else if (msg.type === "ATTENDANCE_REVOKED") {
+            const sid = msg.payload?.student_id;
+            const sname = msg.payload?.student_name || sid;
+            const reason = msg.payload?.reason || "Mobile Phone / Photo Spoof Detected";
+
+            if (sid && this.presentStudents.has(sid)) {
+                this.presentStudents.delete(sid);
+                this.renderLiveClassPresence();
+                this.showToast(`🚨 ATTENDANCE REVOKED: ${sname} marked ABSENT (${reason})`, "error");
+            }
+
+            // Also prominently display on video security alert bar
+            this.showVideoSecurityAlert({
+                reason: `REVOKED: ${sname} marked ABSENT (${reason})`,
+                timestamp: msg.payload?.timestamp || new Date().toLocaleTimeString()
+            });
         }
     },
 
