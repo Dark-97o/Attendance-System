@@ -38,6 +38,9 @@ const App = {
         lastCheck: 0,
         isToggling: false
     },
+    securityAlertTimer: null,
+    securityAlertCount: 0,
+    lastSecurityAlertReason: null,
 
     getApiUrl(endpoint) {
         if (window.location.protocol !== 'file:' && window.location.port === '8080') {
@@ -811,8 +814,82 @@ const App = {
             this.renderLiveClassPresence();
             this.showToast("Attendance reset! Ready to retake.", "info");
         } else if (msg.type === "SPOOF_DETECTED") {
-            const reason = (msg.payload && msg.payload.reason) ? msg.payload.reason : "Phone/Screen Photo";
-            this.showToast(`⚠ Proxy Attempt Blocked: ${reason}`, "error");
+            this.showVideoSecurityAlert(msg.payload);
+        }
+    },
+
+    showVideoSecurityAlert(payload) {
+        const bar = document.getElementById('videoSecurityAlertBar');
+        if (!bar) return;
+
+        const reason = (payload && payload.reason) ? payload.reason : "Photo / Screen Proxy Blocked";
+        const timestamp = (payload && payload.timestamp) ? payload.timestamp : new Date().toLocaleTimeString();
+
+        const iconWrap = document.getElementById('secAlertIconWrap');
+        const iconEl = document.getElementById('secAlertIcon');
+        const msgEl = document.getElementById('secAlertMsg');
+        const timeEl = document.getElementById('secAlertTime');
+        const countPill = document.getElementById('secAlertCountPill');
+
+        if (this.lastSecurityAlertReason === reason && bar.style.display !== 'none') {
+            this.securityAlertCount++;
+        } else {
+            this.securityAlertCount = 1;
+            this.lastSecurityAlertReason = reason;
+        }
+
+        if (msgEl) {
+            msgEl.textContent = `Blocked: ${reason}`;
+            msgEl.title = reason;
+        }
+        if (timeEl) {
+            timeEl.textContent = timestamp;
+        }
+        if (countPill) {
+            if (this.securityAlertCount > 1) {
+                countPill.textContent = `${this.securityAlertCount}x`;
+                countPill.style.display = 'inline-block';
+            } else {
+                countPill.style.display = 'none';
+            }
+        }
+        if (iconEl) {
+            const rLower = reason.toLowerCase();
+            if (rLower.includes('phone') || rLower.includes('screen')) {
+                iconEl.className = 'fa-solid fa-mobile-screen-button';
+            } else if (rLower.includes('blink') || rLower.includes('smile') || rLower.includes('motion')) {
+                iconEl.className = 'fa-solid fa-face-frown';
+            } else {
+                iconEl.className = 'fa-solid fa-shield-virus';
+            }
+        }
+
+        // Show the bar and trigger pulse animation for in-place visual update
+        bar.style.display = 'flex';
+        bar.classList.remove('pulse-update');
+        void bar.offsetWidth; // Force CSS reflow so animation retriggers
+        bar.classList.add('pulse-update');
+
+        // Reset auto-dismiss timer (fades after 6 seconds of calm)
+        if (this.securityAlertTimer) {
+            clearTimeout(this.securityAlertTimer);
+        }
+        this.securityAlertTimer = setTimeout(() => {
+            bar.style.display = 'none';
+            this.securityAlertCount = 0;
+            this.lastSecurityAlertReason = null;
+        }, 6000);
+
+        // Bind dismiss button if not already bound
+        const dismissBtn = document.getElementById('btnDismissSecAlert');
+        if (dismissBtn && !dismissBtn.dataset.bound) {
+            dismissBtn.dataset.bound = "1";
+            dismissBtn.addEventListener('click', () => {
+                if (this.securityAlertTimer) clearTimeout(this.securityAlertTimer);
+                bar.style.display = 'none';
+                this.securityAlertCount = 0;
+                this.lastSecurityAlertReason = null;
+            });
         }
     },
 

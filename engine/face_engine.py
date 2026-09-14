@@ -282,20 +282,20 @@ class FaceEngine:
                 if landmark_data is not None and len(landmark_data) >= 14:
                     raw_lms = np.array(landmark_data[4:14], dtype=np.float32)
 
-                # Find previous landmark history from existing track for biological micro-movement check
-                matched_history = []
+                # Find matching tracked face for history
+                matched_tf = None
                 for existing_tf in self.tracker.tracked_faces.values():
                     if calculate_iou(existing_tf.bbox, bbox) > 0.3:
-                        matched_history = list(existing_tf.landmark_history)
+                        matched_tf = existing_tf
                         break
 
-                # Passive multi-layer liveness evaluation (Moiré, Screen Bezel, Biological Micro-Movement)
+                # Passive multi-layer liveness evaluation (Eye Blink Dynamics + 3D Head Movement + Texture)
                 liveness_result = self.liveness_detector.evaluate_face_liveness(
                     face_crop=face_crop,
                     raw_landmarks=raw_lms,
                     bbox=bbox,
                     full_frame=enhanced_frame,
-                    landmark_history=matched_history
+                    tracked_face=matched_tf
                 )
 
                 # Extract SFace 128D deep embedding
@@ -325,16 +325,24 @@ class FaceEngine:
             sid = tf.identity
             conf = tf.confidence
             meta = self.student_metadata.get(sid) if sid else None
-            is_live = getattr(tf, 'is_live', True)
+            is_live = getattr(tf, 'is_live', False)
+            liveness_state = getattr(tf, 'liveness_state', 'PENDING')
             liveness_reason = getattr(tf, 'liveness_reason', '')
 
-            if not is_live:
+            if liveness_state == "SPOOF":
                 # ⚠ PRESENTATION ATTACK / PHONE SCREEN SPOOF DETECTED
-                box_color = (0, 0, 235)  # High-vis Alert Red
+                box_color = (0, 0, 240)  # High-vis Alert Red
                 label = "⚠ SPOOF DETECTED"
                 sub_label = f"Proxy Blocked: {liveness_reason}"
                 # CRITICAL SECURITY GATE: Exclude from recognized_students! Attendance will NOT be marked.
-            elif sid and meta and conf >= self.similarity_threshold:
+            elif liveness_state == "PENDING":
+                # Verifying Liveness (Smile or natural blink)
+                box_color = (0, 215, 255)  # Cyan
+                name_str = meta['name'] if (sid and meta and conf >= self.similarity_threshold) else "Face"
+                label = f"⏳ {name_str} (Verifying...)"
+                sub_label = "Smile or blink naturally to verify"
+                # Excluded from recognized_students while pending verification
+            elif is_live and sid and meta and conf >= self.similarity_threshold:
                 active_session = self.db.get_active_session()
                 if active_session:
                     # Lecture Active: Student Verified Live & Present
@@ -355,13 +363,19 @@ class FaceEngine:
                     "confidence": conf,
                     "track_id": tf.track_id,
                     "frames_active": tf.frames_active,
-                    "is_live": True
+                    "is_live": True,
+                    "consecutive_live_frames": getattr(tf, 'consecutive_live_frames', 1)
                 })
             else:
-                # Unknown / Unenrolled face (Amber Warning box)
-                box_color = (0, 165, 255)
-                label = "Unregistered Face [LIVE]"
-                sub_label = f"Match: {int(conf * 100)}% (Req: {int(self.similarity_threshold * 100)}%)" if conf > 0 else "Center face in frame"
+                if not is_live:
+                    box_color = (0, 0, 240) if liveness_state == "SPOOF" else (0, 215, 255)
+                    label = "⚠ SPOOF DETECTED" if liveness_state == "SPOOF" else "⏳ Face (Verifying...)"
+                    sub_label = f"Proxy Blocked: {liveness_reason}" if liveness_state == "SPOOF" else "Smile or blink naturally to verify"
+                else:
+                    # Unknown / Unenrolled face (Amber Warning box)
+                    box_color = (0, 165, 255)
+                    label = "Unregistered Face [LIVE]"
+                    sub_label = f"Match: {int(conf * 100)}% (Req: {int(self.similarity_threshold * 100)}%)" if conf > 0 else "Center face in frame"
 
             # Draw sleek HUD corners & bounding box
             self._draw_hud_box(annotated_frame, (x, y, bw, bh), box_color, label, sub_label)

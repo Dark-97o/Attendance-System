@@ -41,6 +41,8 @@ latest_annotated_jpeg: bytes = b""
 is_inference_running = False
 is_engine_enabled = True
 inference_thread: Optional[threading.Thread] = None
+last_spoof_broadcast_time = 0.0
+last_spoof_reason = ""
 
 def _generate_paused_jpeg() -> bytes:
     """Generates a standby frame when camera/vision pipeline is paused by user."""
@@ -86,7 +88,7 @@ def stop_vision_engine() -> bool:
 
 def background_inference_loop():
     """Continuous edge vision loop running at native camera frame rate."""
-    global latest_annotated_jpeg, is_inference_running
+    global latest_annotated_jpeg, is_inference_running, last_spoof_broadcast_time, last_spoof_reason
     cam: CameraStream = context["camera"]
     face_eng: FaceEngine = context["face_engine"]
     att_mgr: AttendanceManager = context["attendance_manager"]
@@ -113,11 +115,14 @@ def background_inference_loop():
         if recognized_students:
             att_mgr.process_recognized_students(recognized_students)
 
-        # Broadcast newly detected spoof attempts to instructor UI
+        # Broadcast spoof attempts with debouncing (at most 1 per 2.5s unless spoof reason changes)
+        now_t = time.time()
         for tf in getattr(face_eng, "last_tracked_faces", []):
-            if not getattr(tf, "is_live", True) and getattr(tf, "consecutive_spoof_frames", 0) == 1:
+            if getattr(tf, "liveness_state", "") == "SPOOF":
                 spoof_reason = getattr(tf, "liveness_reason", "Photo / Screen Spoof")
-                if "Live" not in spoof_reason and "Evaluating" not in spoof_reason:
+                if (now_t - last_spoof_broadcast_time > 2.5) or (spoof_reason != last_spoof_reason):
+                    last_spoof_broadcast_time = now_t
+                    last_spoof_reason = spoof_reason
                     logger.warning(f"Anti-Spoof Alert: Presentation attack blocked ({spoof_reason})")
                     broadcast_ws_event("SPOOF_DETECTED", {
                         "track_id": tf.track_id,

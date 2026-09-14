@@ -40,9 +40,17 @@ class TrackedFace:
         self.landmark_history: List[np.ndarray] = []
         if landmarks is not None:
             self.landmark_history.append(landmarks)
-        self.is_live: bool = True
-        self.liveness_score: float = 1.0
-        self.liveness_reason: str = "Evaluating..."
+        from collections import deque
+        self.r_open_hist = deque(maxlen=30)
+        self.l_open_hist = deque(maxlen=30)
+        self.sharp_hist = deque(maxlen=30)
+        self.smile_hist = deque(maxlen=30)
+        self.has_blinked: bool = False
+        self.has_smiled: bool = False
+        self.is_live: bool = False
+        self.liveness_state: str = "PENDING"
+        self.liveness_score: float = 0.0
+        self.liveness_reason: str = "Smile or blink naturally to verify"
         self.consecutive_spoof_frames: int = 0
         self.consecutive_live_frames: int = 0
 
@@ -63,18 +71,17 @@ class TrackedFace:
                 self.landmark_history.pop(0)
 
         if liveness_info:
-            is_live_now = liveness_info.get("is_live", True)
-            self.liveness_score = liveness_info.get("texture_score", 1.0)
-            if not is_live_now:
-                self.consecutive_spoof_frames += 1
+            self.is_live = bool(liveness_info.get("is_live", False))
+            self.liveness_state = liveness_info.get("state", "PENDING")
+            self.liveness_reason = liveness_info.get("reason", "Verifying...")
+            self.liveness_score = liveness_info.get("texture_score", 0.0)
+            if not self.is_live:
+                if self.liveness_state == "SPOOF":
+                    self.consecutive_spoof_frames += 1
                 self.consecutive_live_frames = 0
-                self.is_live = False
-                self.liveness_reason = liveness_info.get("reason", "Spoof Attack")
             else:
                 self.consecutive_live_frames += 1
                 self.consecutive_spoof_frames = 0
-                self.is_live = True
-                self.liveness_reason = "Verified Live Human"
 
 
 class MultiFaceTracker:
@@ -165,10 +172,11 @@ class MultiFaceTracker:
     def _register(self, bbox: Tuple[int, int, int, int], identity: Optional[str], confidence: float, landmarks: Optional[np.ndarray] = None, liveness_info: Optional[Dict[str, Any]] = None):
         tf = TrackedFace(self.next_track_id, bbox, identity, confidence, landmarks=landmarks)
         if liveness_info:
-            tf.is_live = liveness_info.get("is_live", True)
-            tf.liveness_reason = liveness_info.get("reason", "Evaluating...")
-            tf.liveness_score = liveness_info.get("texture_score", 1.0)
-            if not tf.is_live:
+            tf.is_live = bool(liveness_info.get("is_live", False))
+            tf.liveness_state = liveness_info.get("state", "PENDING")
+            tf.liveness_reason = liveness_info.get("reason", "Verifying...")
+            tf.liveness_score = liveness_info.get("texture_score", 0.0)
+            if tf.liveness_state == "SPOOF":
                 tf.consecutive_spoof_frames = 1
         self.tracked_faces[self.next_track_id] = tf
         self.next_track_id += 1

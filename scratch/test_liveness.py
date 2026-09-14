@@ -1,6 +1,10 @@
 """
-Diagnostic test script for LivenessDetector and Anti-Spoofing integration.
-Verifies FFT spectrum analysis, bezel edge detection, and biological micro-movement dynamics.
+Diagnostic test script for upgraded LivenessDetector (Eye Blink + 3D Yaw + Screen Texture).
+Verifies:
+1. Real student image texture vs high-frequency screen grid.
+2. Natural eye blink detection (open-close-open dip signature) vs static frozen eyes.
+3. 3D head yaw perspective movement vs flat 2D photo.
+4. FaceEngine end-to-end integration and liveness state machine.
 """
 
 import sys
@@ -14,14 +18,14 @@ from database.models import DatabaseManager
 from engine.face_engine import FaceEngine
 
 def test_liveness():
-    print("--- TESTING LIVENESS DETECTOR ---")
+    print("--- TESTING UPGRADED LIVENESS DETECTOR ---")
     detector = LivenessDetector()
 
-    # 1. Test texture analysis with actual enrolled student photo vs screen moiré simulation
+    # 1. Test texture analysis
     real_face_path = os.path.join(os.path.dirname(__file__), "..", "data", "faces", "CSE1065_1789370317.jpg")
     real_face = cv2.imread(real_face_path)
     tex_live, tex_score, tex_reason = detector.evaluate_texture_liveness(real_face)
-    print(f"Real Student Photo -> Live: {tex_live}, Ratio: {tex_score}, Reason: {tex_reason}")
+    print(f"Real Student Photo -> Live: {tex_live}, Score: {tex_score}, Reason: {tex_reason}")
     assert tex_live is True, "Real student photo must pass texture check"
 
     # Simulated screen moiré: high-frequency alternating grid noise
@@ -30,37 +34,48 @@ def test_liveness():
     grid_mock[:, ::2] = 255
     tex_live_grid, tex_score_grid, tex_reason_grid = detector.evaluate_texture_liveness(grid_mock)
     print(f"Screen Grid Mock -> Live: {tex_live_grid}, Score: {tex_score_grid}, Reason: {tex_reason_grid}")
+    assert tex_live_grid is False, "Screen grid mock must be caught by FFT filter"
 
-    # 2. Test landmark dynamics (static frozen photo vs living micro-movements)
-    # Frozen landmarks (identical across 15 frames)
-    base_lm = np.array([50.0, 50.0, 100.0, 50.0, 75.0, 75.0, 60.0, 100.0, 90.0, 100.0], dtype=np.float32)
-    frozen_history = [base_lm.copy() for _ in range(15)]
-    dyn_live_frozen, dyn_score_frozen, dyn_reason_frozen = detector.evaluate_dynamics(frozen_history)
-    print(f"Frozen Photo Landmarks -> Live: {dyn_live_frozen}, Variance: {dyn_score_frozen}, Reason: {dyn_reason_frozen}")
-    assert dyn_live_frozen is False, "Frozen landmarks must be detected as static photo attack"
+    # 2. Test Eye Blink Detection
+    # Static eyes on phone: constant openness metric across 15 frames
+    static_eye_history = [85.0 + np.random.uniform(-1, 1) for _ in range(15)]
+    is_blink_static = detector.detect_eye_blink(static_eye_history)
+    print(f"Static Eyes (Phone Photo) -> Blink Detected: {is_blink_static}")
+    assert is_blink_static is False, "Static eyes must NOT trigger a blink"
 
-    # Dynamic living landmarks (natural micro-movements across 15 frames)
-    living_history = []
-    for f in range(15):
-        jitter = np.random.normal(0, 0.4, size=10).astype(np.float32)
-        living_history.append(base_lm + jitter)
-    dyn_live_living, dyn_score_living, dyn_reason_living = detector.evaluate_dynamics(living_history)
-    print(f"Living Landmarks -> Live: {dyn_live_living}, Variance: {dyn_score_living}, Reason: {dyn_reason_living}")
-    assert dyn_live_living is True, "Natural micro-movements must be accepted as live"
+    # Living person blink: baseline ~85, dips to ~35 for 2 frames, then recovers to ~85
+    blink_eye_history = [85.0, 84.0, 86.0, 85.0, 38.0, 35.0, 78.0, 86.0, 85.0, 84.0]
+    is_blink_live = detector.detect_eye_blink(blink_eye_history)
+    print(f"Natural Blink (Living Person) -> Blink Detected: {is_blink_live}")
+    assert is_blink_live is True, "Natural blink must be detected successfully"
 
-    # 3. Test FaceEngine initialization with liveness detector
+    # 3. Test 3D Perspective Yaw Movement
+    # Static 2D photo on phone: yaw ratio is rigid and fixed
+    static_yaw = [0.92 + np.random.uniform(-0.005, 0.005) for _ in range(15)]
+    is_3d_static = detector.detect_3d_yaw_movement(static_yaw)
+    print(f"Static 2D Phone Photo -> 3D Yaw Movement: {is_3d_static}")
+    assert is_3d_static is False, "Static 2D photo must NOT trigger 3D perspective shift"
+
+    # Living person turning head slightly: yaw changes from 0.88 to 1.05
+    living_yaw = [0.88, 0.89, 0.91, 0.94, 0.98, 1.02, 1.05, 1.03, 0.99, 0.95]
+    is_3d_live = detector.detect_3d_yaw_movement(living_yaw)
+    print(f"Living Head Turn -> 3D Yaw Movement: {is_3d_live}")
+    assert is_3d_live is True, "Natural 3D head movement must be detected successfully"
+
+    # 4. Test FaceEngine end-to-end integration
     print("\n--- TESTING FACE ENGINE INTEGRATION ---")
     db = DatabaseManager()
     face_eng = FaceEngine(db)
-    assert hasattr(face_eng, "liveness_detector"), "FaceEngine must have liveness_detector instance"
-    print("FaceEngine initialized successfully with active liveness detector!")
+    assert hasattr(face_eng, "liveness_detector"), "FaceEngine must have liveness_detector"
+    print("FaceEngine initialized with upgraded liveness detector successfully!")
 
-    # Test processing a blank frame
-    dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
-    ann_frame, rec_students, metrics = face_eng.process_frame(dummy_frame)
-    print(f"Processed dummy frame -> output shape: {ann_frame.shape}, recognized: {len(rec_students)}")
+    # Test processing a frame
+    ann_frame, rec_students, metrics = face_eng.process_frame(real_face)
+    print(f"Processed enrolled image -> Output shape: {ann_frame.shape}, recognized students: {len(rec_students)}")
+    for tf in face_eng.last_tracked_faces:
+        print(f"Tracked Face: id={tf.track_id}, state={tf.liveness_state}, reason={tf.liveness_reason}")
 
-    print("\n[PASS] ALL ANTI-SPOOFING & LIVENESS TESTS PASSED!")
+    print("\n[PASS] ALL ADVANCED ANTI-SPOOFING & LIVENESS TESTS PASSED!")
 
 if __name__ == "__main__":
     test_liveness()

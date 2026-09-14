@@ -281,6 +281,26 @@
                                     </button>
                                 </div>
                             </div>
+
+                            <!-- Dedicated Live Security Alert Banner (Fixed directly below camera feed) -->
+                            <div class="video-security-alert-bar" id="videoSecurityAlertBar" style="display: none;">
+                                <div class="security-alert-left">
+                                    <div class="security-alert-icon-wrap" id="secAlertIconWrap">
+                                        <i class="fa-solid fa-mobile-screen-button" id="secAlertIcon"></i>
+                                    </div>
+                                    <div class="security-alert-text">
+                                        <div class="security-alert-header">
+                                            <span class="security-alert-badge">SECURITY ALERT</span>
+                                            <span class="security-alert-count-pill" id="secAlertCountPill" style="display: none;">1</span>
+                                            <span class="security-alert-time" id="secAlertTime">--:--:--</span>
+                                        </div>
+                                        <div class="security-alert-message" id="secAlertMsg">Presentation attack blocked: Phone screen detected</div>
+                                    </div>
+                                </div>
+                                <button type="button" class="security-alert-close-btn" id="btnDismissSecAlert" title="Dismiss Alert">
+                                    <i class="fa-solid fa-xmark"></i>
+                                </button>
+                            </div>
                         </div>
 
                         <!-- Right Column: Class-Wise Live Presence & Timetable Routine Monitor -->

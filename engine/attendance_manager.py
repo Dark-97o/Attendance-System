@@ -17,7 +17,7 @@ class AttendanceManager:
     """Coordinates teacher fingerprint session gating and real-time student attendance."""
 
     def __init__(self, db: DatabaseManager, fingerprint_mgr: FingerprintManager,
-                 min_dwell_frames: int = 3, debounce_seconds: float = 20.0):
+                 min_dwell_frames: int = 15, debounce_seconds: float = 20.0):
         self.db = db
         self.fingerprint_mgr = fingerprint_mgr
         self.min_dwell_frames = min_dwell_frames
@@ -122,6 +122,12 @@ class AttendanceManager:
         for st in recognized_students:
             sid = st["student_id"]
             conf = st["confidence"]
+
+            # CRITICAL SECURITY GATE: Reject unverified or spoofed students
+            if not st.get("is_live", False):
+                continue
+            if st.get("consecutive_live_frames", 0) < 3:
+                continue
 
             if sid not in self.student_track_state:
                 self.student_track_state[sid] = {
