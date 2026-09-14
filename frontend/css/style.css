@@ -288,40 +288,59 @@ body {
 }
 
 .date-time-widget {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 3px;
-    padding: 6px 14px;
-    background: #f8fafc;
+    display: inline-flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: #ffffff;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-xs);
+    white-space: nowrap;
+    user-select: none;
+    transition: all 0.2s ease;
 }
 
-.date-row {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.78rem;
-    font-weight: 600;
-    color: var(--text-secondary);
+.date-time-widget:hover {
+    box-shadow: var(--shadow-sm);
 }
 
 .time-row {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
     font-family: var(--font-mono);
-    font-size: 0.95rem;
+    font-size: 0.82rem;
     font-weight: 700;
-    color: var(--accent-indigo);
-    letter-spacing: 0.02em;
+    color: var(--text-primary);
+    letter-spacing: -0.01em;
+}
+
+.dt-divider {
+    color: #cbd5e1;
+    font-size: 0.76rem;
+    font-weight: 400;
+}
+
+.date-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-muted);
 }
 
 .widget-icon {
-    font-size: 0.85rem;
-    color: var(--accent-indigo);
+    font-size: 0.76rem;
+}
+
+@media (max-width: 960px) {
+    .date-time-widget .date-row,
+    .date-time-widget .dt-divider {
+        display: none;
+    }
 }
 
 /* ==========================================================================

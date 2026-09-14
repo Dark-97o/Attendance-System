@@ -726,7 +726,7 @@ const App = {
                 clockEl.textContent = now.toLocaleTimeString('en-US', { hour12: true, hour: '2-digit', minute: '2-digit', second: '2-digit' });
             }
             if (dateEl) {
-                dateEl.textContent = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+                dateEl.textContent = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             }
             if (this.sessionStartTime && this.activeSession) {
                 const diffSec = Math.floor((Date.now() - this.sessionStartTime) / 1000);
@@ -945,6 +945,8 @@ const App = {
 
                 const data = await res.json();
                 const faculty = data.session?.teacher_name || teacherName;
+                this.presentStudents.clear();
+                this.renderLiveClassPresence();
                 this.showToast(`Lecture Session Started! Faculty: ${faculty}`, "success");
                 if (window.FirebaseBridge && data.session) {
                     window.FirebaseBridge.syncSession(data.session);

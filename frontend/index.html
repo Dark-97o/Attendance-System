@@ -62,14 +62,15 @@
                     </button>
                 </div>
 
-                <div class="date-time-widget">
-                    <div class="date-row">
-                        <i class="fa-regular fa-calendar widget-icon"></i>
-                        <span id="systemDate">Loading Date...</span>
-                    </div>
+                <div class="date-time-widget" id="dateTimeWidget" title="Institutional System Clock">
                     <div class="time-row">
-                        <i class="fa-regular fa-clock widget-icon"></i>
+                        <i class="fa-regular fa-clock widget-icon" style="color: var(--accent-indigo);"></i>
                         <span id="systemClock">00:00:00</span>
+                    </div>
+                    <span class="dt-divider">|</span>
+                    <div class="date-row">
+                        <i class="fa-regular fa-calendar widget-icon" style="color: #64748b;"></i>
+                        <span id="systemDate">Loading...</span>
                     </div>
                 </div>
             </div>

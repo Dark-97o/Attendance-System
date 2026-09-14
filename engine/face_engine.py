@@ -20,7 +20,7 @@ logger = logging.getLogger("attendance.face_engine")
 class FaceEngine:
     """Core Face Recognition Engine optimized for ARM Cortex-A76 (Raspberry Pi 5)."""
 
-    def __init__(self, db: DatabaseManager, similarity_threshold: float = 0.48, frame_skip: int = 1):
+    def __init__(self, db: DatabaseManager, similarity_threshold: float = 0.42, frame_skip: int = 1):
         self.db = db
         self.similarity_threshold = similarity_threshold
         self.frame_skip = frame_skip
@@ -48,13 +48,13 @@ class FaceEngine:
             logger.warning("Haar cascade file not available; relying on YuNet neural face detector.")
         self.detector_lock = threading.Lock()
 
-        # Initialize YuNet Deep Neural Network Face Detector (High accuracy under backlight/angles)
+        # Initialize YuNet Deep Neural Network Face Detector (Calibrated for USB webcams & varied angles)
         yunet_path = os.path.join(base_dir, "models", "yunet.onnx")
         self.yunet = None
         if os.path.exists(yunet_path) and hasattr(cv2, 'FaceDetectorYN'):
             try:
-                self.yunet = cv2.FaceDetectorYN.create(yunet_path, "", (640, 480), score_threshold=0.50, nms_threshold=0.35)
-                logger.info("Initialized YuNet Deep Neural Network Face Detector (25+ FPS)")
+                self.yunet = cv2.FaceDetectorYN.create(yunet_path, "", (640, 480), score_threshold=0.38, nms_threshold=0.35)
+                logger.info("Initialized YuNet Deep Neural Network Face Detector (25+ FPS, threshold 0.38)")
             except Exception as ye:
                 logger.warning(f"Could not load YuNet detector: {ye}")
 
@@ -238,9 +238,9 @@ class FaceEngine:
         best_sid, best_score = scores[0]
         second_score = scores[1][1] if len(scores) > 1 else -1.0
 
-        # Margin check: top candidate must be separated from runner-up by >= 0.04
+        # Margin check: top candidate must be separated from runner-up by >= 0.025
         margin = (best_score - second_score) if len(scores) > 1 else 1.0
-        if best_score >= self.similarity_threshold and margin >= 0.04 and best_sid:
+        if best_score >= self.similarity_threshold and margin >= 0.025 and best_sid:
             return best_sid, round(best_score, 3), self.student_metadata.get(best_sid)
 
         return None, round(best_score, 3), None
@@ -327,7 +327,7 @@ class FaceEngine:
                 # Unknown / Unenrolled face (Amber Warning box)
                 box_color = (0, 165, 255)
                 label = "Unregistered Face"
-                sub_label = "Go to Enrollment Studio to Register"
+                sub_label = f"Match: {int(conf * 100)}% (Req: {int(self.similarity_threshold * 100)}%)" if conf > 0 else "Center face in frame"
 
             # Draw sleek HUD corners & bounding box
             self._draw_hud_box(annotated_frame, (x, y, bw, bh), box_color, label, sub_label)
