@@ -33,11 +33,56 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(na
 logger = logging.getLogger("attendance.main")
 
 # Global Application Context
+server_start_time = time.time()
 context: Dict[str, Any] = {}
 active_websockets: List[WebSocket] = []
 annotated_frame_lock = threading.Lock()
 latest_annotated_jpeg: bytes = b""
 is_inference_running = False
+is_engine_enabled = True
+inference_thread: Optional[threading.Thread] = None
+
+def _generate_paused_jpeg() -> bytes:
+    """Generates a standby frame when camera/vision pipeline is paused by user."""
+    img = np.zeros((480, 640, 3), dtype=np.uint8)
+    img[:] = (15, 23, 42)  # Slate 900
+    cx, cy = 320, 240
+    cv2.rectangle(img, (cx - 190, cy - 65), (cx + 190, cy + 65), (30, 41, 59), -1)
+    cv2.rectangle(img, (cx - 190, cy - 65), (cx + 190, cy + 65), (245, 158, 11), 2)
+    cv2.putText(img, "AI ENGINE IN STANDBY", (cx - 150, cy - 15),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.72, (245, 158, 11), 2)
+    cv2.putText(img, "Camera released (Click 'Turn On' to resume)", (cx - 170, cy + 25),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.46, (148, 163, 184), 1)
+    ret, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return buf.tobytes() if ret else b""
+
+def start_vision_engine() -> bool:
+    """Activates camera hardware and spawns continuous AI vision inference loop."""
+    global is_inference_running, is_engine_enabled, inference_thread
+    with annotated_frame_lock:
+        if is_inference_running:
+            return True
+        cam: Optional[CameraStream] = context.get("camera")
+        if cam and not cam.running:
+            cam.start()
+        is_inference_running = True
+        is_engine_enabled = True
+        inference_thread = threading.Thread(target=background_inference_loop, daemon=True, name="VisionInferenceThread")
+        inference_thread.start()
+        logger.info("AI Vision Engine and optical camera started successfully.")
+        return True
+
+def stop_vision_engine() -> bool:
+    """Gracefully releases optical camera and pauses AI vision inference loop."""
+    global is_inference_running, is_engine_enabled
+    with annotated_frame_lock:
+        is_inference_running = False
+        is_engine_enabled = False
+        cam: Optional[CameraStream] = context.get("camera")
+        if cam and cam.running:
+            cam.stop()
+        logger.info("AI Vision Engine and camera stopped (standby mode, hardware released).")
+        return True
 
 def background_inference_loop():
     """Continuous edge vision loop running at native camera frame rate."""
@@ -155,16 +200,13 @@ async def lifespan(app: FastAPI):
     init_all_routes(context)
 
     # 4. Start Background Vision Inference Thread
-    is_inference_running = True
-    vision_thread = threading.Thread(target=background_inference_loop, daemon=True, name="VisionInferenceThread")
-    vision_thread.start()
+    start_vision_engine()
 
     logger.info("AI Attendance System ready on Raspberry Pi 5.")
     yield
 
     # Shutdown
-    is_inference_running = False
-    cam.stop()
+    stop_vision_engine()
     if fp_mgr.driver:
         fp_mgr.driver.disconnect()
     logger.info("AI Attendance System shutdown completed.")
@@ -191,16 +233,92 @@ app.include_router(enrollment_router)
 app.include_router(diagnostics_router)
 app.include_router(timetable_router)
 
+# Health & System Power Management Endpoints
+@app.get("/api/health")
+def get_health_status():
+    """Returns real-time backend health, engine state, camera status, and uptime."""
+    cam: Optional[CameraStream] = context.get("camera")
+    return {
+        "status": "online",
+        "engine_active": is_inference_running,
+        "is_engine_enabled": is_engine_enabled,
+        "camera_active": cam.running if cam else False,
+        "is_synthetic": cam.is_synthetic if cam else True,
+        "camera_source": cam.src if cam else 0,
+        "fps": cam.fps if cam else 0.0,
+        "uptime_seconds": round(time.time() - server_start_time, 1)
+    }
+
+@app.post("/api/system/engine/toggle")
+def toggle_vision_engine(payload: Optional[Dict[str, Any]] = None):
+    """Toggles AI vision engine and optical camera between active and standby mode."""
+    target_state = None
+    if payload:
+        if "active" in payload:
+            target_state = bool(payload["active"])
+        elif "enable" in payload:
+            target_state = bool(payload["enable"])
+        elif "action" in payload:
+            target_state = (payload["action"] == "start" or payload["action"] == "on")
+    
+    if target_state is None:
+        target_state = not is_inference_running
+
+    if target_state:
+        start_vision_engine()
+        msg = "AI Vision Engine and camera activated"
+    else:
+        stop_vision_engine()
+        msg = "AI Vision Engine and camera paused (standby mode, camera released)"
+
+    cam: Optional[CameraStream] = context.get("camera")
+    return {
+        "success": True,
+        "engine_active": is_inference_running,
+        "is_engine_enabled": is_engine_enabled,
+        "camera_active": cam.running if cam else False,
+        "message": msg
+    }
+
+@app.post("/api/system/shutdown")
+def shutdown_system():
+    """Gracefully terminates the FastAPI and Uvicorn backend process."""
+    stop_vision_engine()
+    fp_mgr = context.get("fingerprint_manager")
+    if fp_mgr and fp_mgr.driver:
+        try:
+            fp_mgr.driver.disconnect()
+        except Exception:
+            pass
+
+    def _delayed_exit():
+        time.sleep(0.5)
+        logger.info("Process terminated via user /api/system/shutdown request.")
+        os._exit(0)
+
+    threading.Thread(target=_delayed_exit, daemon=True).start()
+    return {
+        "success": True,
+        "message": "Backend server process is shutting down"
+    }
+
 # Video Streaming Endpoint (MJPEG)
 async def generate_mjpeg_frames():
     try:
-        while is_inference_running:
-            with annotated_frame_lock:
-                frame_bytes = latest_annotated_jpeg
-            if frame_bytes:
-                yield (b"--frame\r\n"
-                       b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
-            await asyncio.sleep(0.033)  # ~30 FPS
+        while True:
+            if is_inference_running:
+                with annotated_frame_lock:
+                    frame_bytes = latest_annotated_jpeg
+                if frame_bytes:
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n\r\n" + frame_bytes + b"\r\n")
+                await asyncio.sleep(0.033)  # ~30 FPS
+            else:
+                paused_bytes = _generate_paused_jpeg()
+                if paused_bytes:
+                    yield (b"--frame\r\n"
+                           b"Content-Type: image/jpeg\r\n\r\n" + paused_bytes + b"\r\n")
+                await asyncio.sleep(0.5)  # 2 FPS standby
     except (asyncio.CancelledError, GeneratorExit, Exception):
         pass
 

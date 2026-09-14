@@ -32,6 +32,12 @@ const App = {
         templateId: '',
         publicKey: ''
     },
+    backendState: {
+        isOnline: false,
+        engineActive: false,
+        lastCheck: 0,
+        isToggling: false
+    },
 
     getApiUrl(endpoint) {
         if (window.location.protocol !== 'file:' && window.location.port === '8080') {
@@ -55,6 +61,7 @@ const App = {
 
         this.bindEvents();
         this.initClock();
+        this.initBackendMonitor();
         this.initFirebaseAuth();
         this.initVideoFeedWatchdog();
         this.initCameraControls();
@@ -65,6 +72,12 @@ const App = {
     },
 
     bindEvents() {
+        // Backend Server Power Toggle Button
+        const powerBtn = document.getElementById('btnBackendPower');
+        if (powerBtn) {
+            powerBtn.addEventListener('click', () => this.toggleBackendPower());
+        }
+
         // Tab Navigation
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -1501,6 +1514,114 @@ const App = {
         const enrollLiveImg = document.getElementById('enrollLiveCameraFeed');
         if (enrollLiveImg && !this.useEnrollWebcam) {
             enrollLiveImg.src = `${this.getApiUrl('/api/video/feed')}?t=${t}`;
+        }
+    },
+
+    initBackendMonitor() {
+        this.checkBackendHealth();
+        // Periodic heartbeat watchdog every 2.5 seconds
+        setInterval(() => this.checkBackendHealth(), 2500);
+    },
+
+    async checkBackendHealth() {
+        const pill = document.getElementById('backendStatusPill');
+        const text = document.getElementById('backendStatusText');
+        const btn = document.getElementById('btnBackendPower');
+        const btnText = document.getElementById('backendPowerBtnText');
+        const icon = document.getElementById('backendPowerIcon');
+
+        if (this.backendState.isToggling) return;
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 2000);
+            const res = await fetch(this.getApiUrl('/api/health'), { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (res.ok) {
+                const data = await res.json();
+                this.backendState.isOnline = true;
+                this.backendState.engineActive = !!data.engine_active;
+
+                if (pill) {
+                    pill.className = data.engine_active 
+                        ? 'backend-status-pill online' 
+                        : 'backend-status-pill standby';
+                }
+                if (text) {
+                    text.textContent = data.engine_active 
+                        ? 'Backend: Online' 
+                        : 'Backend: Standby';
+                }
+                if (btn) {
+                    btn.disabled = false;
+                    btn.className = data.engine_active 
+                        ? 'btn-backend-power is-active' 
+                        : 'btn-backend-power is-standby';
+                    btn.title = data.engine_active 
+                        ? 'Turn off AI Vision Engine & release optical camera' 
+                        : 'Turn on AI Vision Engine & connect optical camera';
+                }
+                if (btnText) {
+                    btnText.textContent = data.engine_active ? 'Turn Off' : 'Turn On';
+                }
+                if (icon) {
+                    icon.className = data.engine_active ? 'fa-solid fa-power-off' : 'fa-solid fa-play';
+                }
+            } else {
+                throw new Error("HTTP " + res.status);
+            }
+        } catch (e) {
+            this.backendState.isOnline = false;
+            this.backendState.engineActive = false;
+
+            if (pill) pill.className = 'backend-status-pill offline';
+            if (text) text.textContent = 'Backend: Offline';
+            if (btn) {
+                btn.className = 'btn-backend-power is-offline';
+                btn.disabled = false;
+                btn.title = 'Backend offline. Run "python run.py" or use Desktop Launcher';
+            }
+            if (btnText) btnText.textContent = 'Offline';
+            if (icon) icon.className = 'fa-solid fa-triangle-exclamation';
+        }
+    },
+
+    async toggleBackendPower() {
+        if (!this.backendState.isOnline) {
+            this.showToast("Backend is offline. Start the server using 'python run.py' or the Desktop Launcher.", "warning");
+            return;
+        }
+
+        const btn = document.getElementById('btnBackendPower');
+        const btnText = document.getElementById('backendPowerBtnText');
+        const icon = document.getElementById('backendPowerIcon');
+
+        this.backendState.isToggling = true;
+        if (btn) btn.disabled = true;
+        if (btnText) btnText.textContent = 'Switching...';
+        if (icon) icon.className = 'fa-solid fa-circle-notch fa-spin';
+
+        try {
+            const willEnable = !this.backendState.engineActive;
+            const res = await fetch(this.getApiUrl('/api/system/engine/toggle'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ active: willEnable })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                this.backendState.engineActive = !!data.engine_active;
+                this.showToast(data.message || (willEnable ? "AI Vision Engine activated" : "AI Vision Engine paused"), "info");
+                this.refreshVideoFeeds();
+            } else {
+                this.showToast(data.message || "Failed to toggle engine", "error");
+            }
+        } catch (e) {
+            this.showToast("Error communicating with backend: " + e.message, "error");
+        } finally {
+            this.backendState.isToggling = false;
+            this.checkBackendHealth();
         }
     },
 

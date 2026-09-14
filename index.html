@@ -50,6 +50,18 @@
                 <p class="college-subtitle">Department of Computer Science & Engineering • Smart Campus AI System</p>
             </div>
             <div class="top-nav-right">
+                <!-- Backend Server Health & Power Toggle Widget -->
+                <div class="backend-power-widget" id="backendPowerWidget">
+                    <div class="backend-status-pill offline" id="backendStatusPill" title="FastAPI Backend Health Status (Port 8080)">
+                        <span class="backend-status-dot" id="backendStatusDot"></span>
+                        <span class="backend-status-text" id="backendStatusText">Backend: Connecting...</span>
+                    </div>
+                    <button type="button" class="btn-backend-power is-standby" id="btnBackendPower" title="Toggle AI Vision Engine and Camera on/off">
+                        <i class="fa-solid fa-power-off" id="backendPowerIcon"></i>
+                        <span id="backendPowerBtnText">Turn Off</span>
+                    </button>
+                </div>
+
                 <div class="date-time-widget">
                     <div class="date-row">
                         <i class="fa-regular fa-calendar widget-icon"></i>

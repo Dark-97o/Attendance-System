@@ -169,6 +169,122 @@ body {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    gap: 12px;
+}
+
+/* Backend Server Status & Power Toggle Widget */
+.backend-power-widget {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    border: 1px solid var(--border-color);
+    padding: 6px 12px;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-xs);
+    transition: all 0.2s ease;
+}
+
+.backend-power-widget:hover {
+    box-shadow: var(--shadow-sm);
+}
+
+.backend-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #64748b;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.backend-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #94a3b8;
+    display: inline-block;
+    transition: all 0.3s ease;
+}
+
+.backend-status-pill.online {
+    color: #065f46;
+}
+
+.backend-status-pill.online .backend-status-dot {
+    background: #10b981;
+    box-shadow: 0 0 8px #10b981;
+    animation: pulse 1.8s infinite;
+}
+
+.backend-status-pill.standby {
+    color: #92400e;
+}
+
+.backend-status-pill.standby .backend-status-dot {
+    background: #f59e0b;
+    box-shadow: 0 0 8px #f59e0b;
+}
+
+.backend-status-pill.offline {
+    color: #991b1b;
+}
+
+.backend-status-pill.offline .backend-status-dot {
+    background: #ef4444;
+    box-shadow: 0 0 8px #ef4444;
+}
+
+.btn-backend-power {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid #cbd5e1;
+    transition: all 0.2s ease;
+    background: #f8fafc;
+    color: #475569;
+    white-space: nowrap;
+}
+
+.btn-backend-power:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+}
+
+.btn-backend-power.is-active {
+    background: #fee2e2;
+    color: #dc2626;
+    border-color: #fca5a5;
+}
+
+.btn-backend-power.is-active:hover {
+    background: #fecaca;
+    color: #b91c1c;
+}
+
+.btn-backend-power.is-standby {
+    background: #ecfdf5;
+    color: #059669;
+    border-color: #6ee7b7;
+}
+
+.btn-backend-power.is-standby:hover {
+    background: #d1fae5;
+    color: #047857;
+}
+
+.btn-backend-power.is-offline {
+    background: #f1f5f9;
+    color: #94a3b8;
+    border-color: #e2e8f0;
+    cursor: not-allowed;
 }
 
 .date-time-widget {
