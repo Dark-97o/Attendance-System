@@ -2327,50 +2327,43 @@ const App = {
             card.dataset.studentId = s.student_id;
             card.style.cssText = `
                 display: flex !important;
-                flex-direction: column !important;
+                align-items: center !important;
                 justify-content: space-between !important;
                 background: #ffffff;
-                border-radius: 10px;
-                padding: 12px 14px;
-                border: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.3)'};
-                border-left: 5px solid ${isPresent ? '#10b981' : '#ef4444'} !important;
+                border-radius: 8px;
+                padding: 6px 10px;
+                border: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.25)'};
+                border-left: 4px solid ${isPresent ? '#10b981' : '#ef4444'} !important;
                 box-sizing: border-box !important;
                 min-width: 0 !important;
                 overflow: hidden !important;
-                min-height: 114px;
+                min-height: 48px;
                 gap: 8px;
+                transition: transform 0.15s ease, box-shadow 0.15s ease;
             `;
 
             const photoSrc = s.photo_path 
                 ? `${this.getApiUrl('/faces/' + s.photo_path.split(/[/\\]/).pop())}?t=${Date.now()}` 
                 : '';
             const photoHtml = photoSrc
-                ? `<img src="${photoSrc}" style="width: 44px; height: 44px; border-radius: 10px; object-fit: cover; flex-shrink: 0; border: 2px solid ${isPresent ? '#10b981' : '#f87171'};" onerror="this.outerHTML='<div class=\\'student-presence-avatar\\' style=\\'width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; background: ${isPresent ? '#ecfdf5; color: #059669; border: 2px solid #10b981;' : '#fef2f2; color: #dc2626; border: 2px solid #f87171;'}\\'>${(s.name || 'S').charAt(0)}</div>'">`
-                : `<div class="student-presence-avatar" style="width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-weight: 800; flex-shrink: 0; background: ${isPresent ? '#ecfdf5; color: #059669; border: 2px solid #10b981;' : '#fef2f2; color: #dc2626; border: 2px solid #f87171;'}">${(s.name || 'S').charAt(0)}</div>`;
+                ? `<img src="${photoSrc}" style="width: 34px; height: 34px; border-radius: 6px; object-fit: cover; flex-shrink: 0; border: 1.5px solid ${isPresent ? '#10b981' : '#f87171'};" onerror="this.outerHTML='<div class=\\'student-presence-avatar\\' style=\\'width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.78rem; flex-shrink: 0; background: ${isPresent ? '#ecfdf5; color: #059669; border: 1.5px solid #10b981;' : '#fef2f2; color: #dc2626; border: 1.5px solid #f87171;'}\\'>${(s.name || 'S').charAt(0)}</div>'">`
+                : `<div class="student-presence-avatar" style="width: 34px; height: 34px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.78rem; flex-shrink: 0; background: ${isPresent ? '#ecfdf5; color: #059669; border: 1.5px solid #10b981;' : '#fef2f2; color: #dc2626; border: 1.5px solid #f87171;'}">${(s.name || 'S').charAt(0)}</div>`;
 
             const statusBadge = isPresent
-                ? `<span class="badge-status-present" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 800; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; white-space: nowrap; flex-shrink: 0;"><i class="fa-solid fa-circle-check"></i> PRESENT</span>`
-                : `<span class="badge-status-absent" style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 12px; font-size: 0.72rem; font-weight: 800; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; white-space: nowrap; flex-shrink: 0;"><i class="fa-solid fa-circle-xmark"></i> ABSENT</span>`;
-
-            const emailHtml = s.email 
-                ? `<div style="font-size: 0.7rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; display: flex; align-items: center; gap: 4px;" title="${s.email}"><i class="fa-solid fa-envelope" style="font-size: 0.68rem; color: #94a3b8; flex-shrink: 0;"></i><span style="overflow: hidden; text-overflow: ellipsis;">${s.email}</span></div>`
-                : '';
+                ? `<span class="badge-status-present" style="display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 10px; font-size: 0.67rem; font-weight: 800; background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; white-space: nowrap; flex-shrink: 0;"><i class="fa-solid fa-circle-check" style="font-size: 0.62rem;"></i> PRESENT</span>`
+                : `<span class="badge-status-absent" style="display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 10px; font-size: 0.67rem; font-weight: 800; background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; white-space: nowrap; flex-shrink: 0;"><i class="fa-solid fa-circle-xmark" style="font-size: 0.62rem;"></i> ABSENT</span>`;
 
             card.innerHTML = `
-                <div style="display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; overflow: hidden;">
+                <div style="display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; flex: 1;">
                     ${photoHtml}
-                    <div style="flex: 1; min-width: 0; overflow: hidden;">
-                        <h4 style="margin: 0; font-size: 0.88rem; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${s.name}">${s.name}</h4>
-                        <div style="margin: 2px 0 0 0; font-size: 0.73rem; color: #64748b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            ${s.roll_number ? `<span style="color: #334155;">${s.roll_number}</span> • ` : ''}<span style="background: #f1f5f9; padding: 1px 6px; border-radius: 4px; color: #475569; font-weight: 700;">${s.class_section}</span>
+                    <div style="min-width: 0; overflow: hidden; line-height: 1.25;">
+                        <h4 style="margin: 0; font-size: 0.82rem; font-weight: 800; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${s.name}">${s.name}</h4>
+                        <div style="margin-top: 2px; font-size: 0.68rem; color: #64748b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            <span style="font-family: monospace; font-weight: 700; color: #475569;">${s.student_id}</span> • <span style="background: #f1f5f9; padding: 1px 5px; border-radius: 3px; color: #334155; font-weight: 700;">${s.class_section}</span>
                         </div>
-                        ${emailHtml}
                     </div>
                 </div>
-                <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; min-width: 0; margin-top: 6px; padding-top: 6px; border-top: 1px solid ${isPresent ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.15)'};">
-                    <span style="font-family: monospace; font-size: 0.72rem; font-weight: 700; color: #64748b; letter-spacing: 0.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${s.student_id}</span>
-                    ${statusBadge}
-                </div>
+                ${statusBadge}
             `;
             grid.appendChild(card);
         });

@@ -97,10 +97,12 @@ body {
    ========================================================================== */
 
 .top-nav {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 28px;
+    min-height: 68px;
+    padding: 10px 28px;
     background: #ffffff;
     border-bottom: 1px solid var(--border-color);
     box-shadow: var(--shadow-xs);
@@ -109,9 +111,9 @@ body {
 }
 
 .top-nav-left {
-    flex: 1;
     display: flex;
     align-items: center;
+    z-index: 2;
 }
 
 .college-crest {
@@ -139,12 +141,19 @@ body {
 }
 
 .top-nav-center {
-    flex: 3;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     text-align: center;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    pointer-events: auto;
+    z-index: 1;
+    width: max-content;
+    max-width: calc(100% - 440px);
 }
 
 .college-title {
@@ -154,6 +163,9 @@ body {
     color: #0f172a;
     line-height: 1.2;
     text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .college-subtitle {
@@ -162,14 +174,18 @@ body {
     color: var(--text-muted);
     letter-spacing: 0.02em;
     margin-top: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .top-nav-right {
-    flex: 1;
     display: flex;
     align-items: center;
     justify-content: flex-end;
     gap: 12px;
+    z-index: 2;
+    margin-left: auto;
 }
 
 /* Backend Server Status & Power Toggle Widget */
@@ -179,8 +195,8 @@ body {
     gap: 8px;
     background: #ffffff;
     border: 1px solid var(--border-color);
-    padding: 6px 12px;
-    border-radius: var(--radius-sm);
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
     box-shadow: var(--shadow-xs);
     transition: all 0.2s ease;
 }
@@ -193,7 +209,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     font-weight: 700;
     color: #64748b;
     user-select: none;
@@ -241,8 +257,8 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 4px 10px;
-    border-radius: 6px;
+    padding: 3px 10px;
+    border-radius: var(--radius-full);
     font-size: 0.74rem;
     font-weight: 700;
     cursor: pointer;
@@ -336,10 +352,70 @@ body {
     font-size: 0.76rem;
 }
 
+@media (max-width: 1100px) {
+    .top-nav-center {
+        max-width: calc(100% - 520px);
+    }
+    .college-title {
+        font-size: 1.15rem;
+    }
+    .college-subtitle {
+        font-size: 0.72rem;
+    }
+}
+
 @media (max-width: 960px) {
     .date-time-widget .date-row,
     .date-time-widget .dt-divider {
         display: none;
+    }
+
+    .top-nav {
+        flex-wrap: wrap;
+        padding: 10px 16px;
+        min-height: auto;
+        gap: 8px;
+    }
+
+    .top-nav-center {
+        position: static;
+        transform: none;
+        order: -1;
+        width: 100%;
+        max-width: 100%;
+        margin-bottom: 4px;
+    }
+
+    .top-nav-left {
+        order: 1;
+    }
+
+    .top-nav-right {
+        order: 2;
+    }
+
+    .sub-nav-bar {
+        flex-wrap: wrap;
+        padding: 8px 16px;
+        min-height: auto;
+        gap: 8px;
+    }
+
+    .nav-tabs {
+        position: static;
+        transform: none;
+        order: -1;
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 4px;
+    }
+
+    .sub-nav-left {
+        order: 1;
+    }
+
+    .sub-nav-right {
+        order: 2;
     }
 }
 
@@ -348,9 +424,11 @@ body {
    ========================================================================== */
 
 .sub-nav-bar {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    min-height: 52px;
     padding: 8px 28px;
     background: #ffffff;
     border-bottom: 1px solid var(--border-color);
@@ -362,6 +440,7 @@ body {
 .sub-nav-left {
     display: flex;
     align-items: center;
+    z-index: 2;
 }
 
 .status-pill {
@@ -401,6 +480,10 @@ body {
 
 /* Navigation Tab Buttons */
 .nav-tabs {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -408,6 +491,7 @@ body {
     padding: 4px;
     border-radius: var(--radius-full);
     border: 1px solid var(--border-color);
+    z-index: 1;
 }
 
 .tab-btn {
@@ -440,6 +524,8 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+    z-index: 2;
+    margin-left: auto;
 }
 
 .auth-pill-btn {
@@ -2010,42 +2096,36 @@ body {
 .teacher-presence-card {
     background: #ffffff;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    padding: 16px 20px;
-    box-shadow: var(--shadow-sm);
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    box-shadow: var(--shadow-xs);
     display: flex;
     justify-content: space-between;
     align-items: center;
-    transition: all 0.3s ease;
-    margin-bottom: 16px;
+    transition: all 0.2s ease;
+    margin-bottom: 8px;
 }
 
 .class-filter-bar {
     display: flex;
-    gap: 8px;
+    gap: 4px;
     flex-wrap: wrap;
     align-items: center;
-    margin-bottom: 16px;
-    background: #ffffff;
-    padding: 10px 14px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--shadow-sm);
 }
 
 .btn-class-pill {
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 0.8rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.72rem;
     font-weight: 700;
     border: 1px solid #e2e8f0;
-    background: #f8fafc;
+    background: #ffffff;
     color: #475569;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: all 0.15s ease;
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 4px;
 }
 
 .btn-class-pill:hover {
@@ -2057,35 +2137,35 @@ body {
     background: var(--accent-indigo);
     color: #ffffff;
     border-color: var(--accent-indigo);
-    box-shadow: 0 2px 8px rgba(79, 70, 229, 0.3);
+    box-shadow: 0 1px 4px rgba(79, 70, 229, 0.25);
 }
 
 .live-student-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 8px;
 }
 
 .student-presence-card {
     background: #ffffff;
-    border-radius: var(--radius-sm);
-    padding: 12px 14px;
+    border-radius: 8px;
+    padding: 6px 10px;
     border: 1px solid var(--border-color);
     display: flex !important;
-    flex-direction: column !important;
+    align-items: center !important;
     justify-content: space-between !important;
-    gap: 10px;
-    box-shadow: var(--shadow-sm);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    gap: 8px;
+    box-shadow: var(--shadow-xs);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
     box-sizing: border-box;
     overflow: hidden;
-    min-height: 112px;
+    min-height: 48px;
     min-width: 0;
 }
 
 .student-presence-card:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
 }
 
 .student-presence-card.is-present {
@@ -2095,8 +2175,7 @@ body {
 
 .student-presence-card.is-absent {
     border-left: 4px solid #ef4444;
-    background: linear-gradient(135deg, rgba(239, 68, 68, 0.03), #ffffff);
-    opacity: 0.85;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.02), #ffffff);
 }
 
 .badge-status-present {

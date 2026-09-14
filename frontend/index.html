@@ -50,18 +50,6 @@
                 <p class="college-subtitle">Department of Computer Science & Engineering • Smart Campus AI System</p>
             </div>
             <div class="top-nav-right">
-                <!-- Backend Server Health & Power Toggle Widget -->
-                <div class="backend-power-widget" id="backendPowerWidget">
-                    <div class="backend-status-pill offline" id="backendStatusPill" title="FastAPI Backend Health Status (Port 8080)">
-                        <span class="backend-status-dot" id="backendStatusDot"></span>
-                        <span class="backend-status-text" id="backendStatusText">Backend: Connecting...</span>
-                    </div>
-                    <button type="button" class="btn-backend-power is-standby" id="btnBackendPower" title="Toggle AI Vision Engine and Camera on/off">
-                        <i class="fa-solid fa-power-off" id="backendPowerIcon"></i>
-                        <span id="backendPowerBtnText">Turn Off</span>
-                    </button>
-                </div>
-
                 <div class="date-time-widget" id="dateTimeWidget" title="Institutional System Clock">
                     <div class="time-row">
                         <i class="fa-regular fa-clock widget-icon" style="color: var(--accent-indigo);"></i>
@@ -212,9 +200,16 @@
             <!-- Sub-Navigation Action Bar (Pills, Tabs, and Profile Controls) -->
             <div class="sub-nav-bar">
                 <div class="sub-nav-left">
-                    <div class="status-pill" id="sessionPill">
-                        <div class="pulse-dot inactive"></div>
-                        <span>GATED / INACTIVE</span>
+                    <!-- Backend Server Health & Power Toggle Widget -->
+                    <div class="backend-power-widget" id="backendPowerWidget">
+                        <div class="backend-status-pill offline" id="backendStatusPill" title="FastAPI Backend Health Status (Port 8080)">
+                            <span class="backend-status-dot" id="backendStatusDot"></span>
+                            <span class="backend-status-text" id="backendStatusText">Backend: Connecting...</span>
+                        </div>
+                        <button type="button" class="btn-backend-power is-standby" id="btnBackendPower" title="Toggle AI Vision Engine and Camera on/off">
+                            <i class="fa-solid fa-power-off" id="backendPowerIcon"></i>
+                            <span id="backendPowerBtnText">Turn Off</span>
+                        </button>
                     </div>
                 </div>
 
@@ -305,88 +300,84 @@
 
                         <!-- Right Column: Class-Wise Live Presence & Timetable Routine Monitor -->
                         <div class="data-column">
-                            <div class="feed-card class-dashboard-card" style="padding: 18px 20px; height: auto;">
+                            <div class="feed-card class-dashboard-card" style="padding: 10px 14px; height: auto;">
                                 <!-- Dashboard Header with Lecture Session Button & Email Trigger -->
-                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+                                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px;">
                                     <div>
-                                        <h3 style="margin: 0; font-size: 1.1rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 8px;">
+                                        <h3 style="margin: 0; font-size: 0.95rem; font-weight: 800; color: #0f172a; display: flex; align-items: center; gap: 6px;">
                                             <i class="fa-solid fa-users-viewfinder" style="color: var(--accent-indigo);"></i>
                                             <span>Class-Wise Live Presence</span>
                                         </h3>
-                                        <p style="margin: 3px 0 0 0; font-size: 0.75rem; color: var(--text-muted);">
+                                        <p style="margin: 1px 0 0 0; font-size: 0.7rem; color: var(--text-muted);">
                                             Real-time student detection & routine monitor
                                         </p>
                                     </div>
                                     
-                                    <div style="display: flex; gap: 8px; align-items: center;">
-                                        <button class="fp-action-btn" id="btnToggleSession" style="background: linear-gradient(135deg, #10b981, #059669); padding: 7px 14px; font-size: 0.8rem; font-weight: 700;">
+                                    <div style="display: flex; gap: 6px; align-items: center;">
+                                        <button class="fp-action-btn" id="btnToggleSession" style="background: linear-gradient(135deg, #10b981, #059669); padding: 5px 11px; font-size: 0.75rem; font-weight: 700; border-radius: 6px;">
                                             <i class="fa-solid fa-play"></i> Start Lecture
                                         </button>
-                                        <button type="button" class="btn-ctrl" id="btnResetAttendance" title="Reset and Retake Attendance" style="padding: 7px 12px; font-size: 0.78rem; font-weight: 700; background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48; cursor: pointer; border-radius: 8px; transition: all 0.2s ease;">
+                                        <button type="button" class="btn-ctrl" id="btnResetAttendance" title="Reset and Retake Attendance" style="padding: 5px 10px; font-size: 0.74rem; font-weight: 700; background: #fff1f2; border: 1px solid #fecdd3; color: #e11d48; cursor: pointer; border-radius: 6px; transition: all 0.2s ease;">
                                             <i class="fa-solid fa-rotate-left"></i> Retake Attendance
                                         </button>
-                                        <button type="button" class="btn-ctrl" id="btnOpenEmailModal" title="Send Daily Summary Emails" style="padding: 7px 12px; font-size: 0.78rem; font-weight: 700; background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.08)); border: 1px solid rgba(79, 70, 229, 0.3); color: var(--accent-indigo);">
+                                        <button type="button" class="btn-ctrl" id="btnOpenEmailModal" title="Send Daily Summary Emails" style="padding: 5px 10px; font-size: 0.74rem; font-weight: 700; background: linear-gradient(135deg, rgba(79, 70, 229, 0.08), rgba(16, 185, 129, 0.08)); border: 1px solid rgba(79, 70, 229, 0.3); color: var(--accent-indigo); border-radius: 6px;">
                                             <i class="fa-solid fa-envelope-circle-check"></i> Summary
                                         </button>
                                     </div>
                                 </div>
 
                                 <!-- Lecture Session Status Mini-Banner -->
-                                <div class="teacher-banner session-inactive" id="teacherBanner" style="margin-bottom: 12px; padding: 8px 12px;">
-                                    <div class="banner-info" style="gap: 10px;">
-                                        <div class="banner-icon" id="bannerIcon" style="width: 32px; height: 32px; font-size: 1rem;"><i class="fa-solid fa-lock"></i></div>
+                                <div class="teacher-banner session-inactive" id="teacherBanner" style="margin-bottom: 6px; padding: 6px 10px;">
+                                    <div class="banner-info" style="gap: 8px;">
+                                        <div class="banner-icon" id="bannerIcon" style="width: 26px; height: 26px; font-size: 0.85rem;"><i class="fa-solid fa-lock"></i></div>
                                         <div class="banner-details">
-                                            <h4 id="bannerTitle" style="font-size: 0.85rem; margin: 0; font-weight: 700;">Lecture Session Inactive</h4>
-                                            <p id="bannerSub" style="margin: 2px 0 0 0; font-size: 0.73rem; color: #64748b;">Click "Start Lecture" to begin live attendance logging</p>
+                                            <h4 id="bannerTitle" style="font-size: 0.8rem; margin: 0; font-weight: 700;">Lecture Session Inactive</h4>
+                                            <p id="bannerSub" style="margin: 1px 0 0 0; font-size: 0.7rem; color: #64748b;">Click "Start Lecture" to begin live attendance logging</p>
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Class Selection Filter Tabs -->
-                                <div class="class-filter-bar" style="margin-bottom: 12px;">
-                                    <span style="font-size: 0.74rem; font-weight: 700; color: #64748b; margin-right: 4px;"><i class="fa-solid fa-filter"></i> Class:</span>
-                                    <button type="button" class="btn-class-pill active" data-class="ALL" id="btnClassALL"><i class="fa-solid fa-layer-group"></i> All</button>
-                                    <button type="button" class="btn-class-pill" data-class="CSE" id="btnClassCSE">CSE</button>
-                                    <button type="button" class="btn-class-pill" data-class="ECE" id="btnClassECE">ECE</button>
-                                </div>
-
                                 <!-- Active Lecture & Scheduled Teacher Presence Card (Blinks Yellow if Teacher is >5 mins late) -->
-                                <div class="teacher-presence-card" id="teacherPresenceCard" style="margin-bottom: 12px;">
-                                    <div style="display: flex; align-items: center; gap: 12px;">
-                                        <div id="teacherAvatarBox" style="width: 38px; height: 38px; border-radius: 10px; background: #e0e7ff; color: var(--accent-indigo); display: flex; align-items: center; justify-content: center; font-size: 1.15rem; border: 1px solid #c7d2fe; flex-shrink: 0;">
+                                <div class="teacher-presence-card" id="teacherPresenceCard" style="margin-bottom: 8px; padding: 6px 10px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <div id="teacherAvatarBox" style="width: 28px; height: 28px; border-radius: 6px; background: #e0e7ff; color: var(--accent-indigo); display: flex; align-items: center; justify-content: center; font-size: 0.95rem; border: 1px solid #c7d2fe; flex-shrink: 0;">
                                             <i class="fa-solid fa-chalkboard-user"></i>
                                         </div>
                                         <div>
-                                            <div style="display: flex; align-items: center; gap: 8px;">
-                                                <h4 style="margin: 0; font-size: 0.9rem; font-weight: 800; color: #0f172a;" id="activeTeacherName">Scheduled Faculty</h4>
-                                                <span class="badge" style="font-size: 0.68rem; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;" id="activeTimeSlotBadge">No Active Slot</span>
+                                            <div style="display: flex; align-items: center; gap: 6px;">
+                                                <h4 style="margin: 0; font-size: 0.82rem; font-weight: 800; color: #0f172a;" id="activeTeacherName">Scheduled Faculty</h4>
+                                                <span class="badge" style="font-size: 0.65rem; padding: 1px 5px; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;" id="activeTimeSlotBadge">No Active Slot</span>
                                             </div>
-                                            <p style="margin: 2px 0 0 0; font-size: 0.74rem; color: var(--text-muted);" id="activeSubjectDesc">
+                                            <p style="margin: 1px 0 0 0; font-size: 0.69rem; color: var(--text-muted);" id="activeSubjectDesc">
                                                 Lecture Subject: <strong id="activeSubjectName">Standby / Unscheduled</strong> | Room: <span id="activeRoomName">Room 101</span>
                                             </p>
                                         </div>
                                     </div>
                                     
                                     <div id="teacherPresenceBadgeContainer">
-                                        <span class="badge-status-absent" id="teacherPresenceBadge" style="font-size: 0.76rem; padding: 5px 12px;">
+                                        <span class="badge-status-absent" id="teacherPresenceBadge" style="font-size: 0.7rem; padding: 3px 8px;">
                                             <i class="fa-solid fa-clock"></i> TEACHER NOT PRESENT
                                         </span>
                                     </div>
                                 </div>
 
+                                <!-- Integrated Class Selection Filter Tabs & Presence Count Bar -->
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 4px 8px; background: #f8fafc; border-radius: 6px; border: 1px solid var(--border-color);">
+                                    <div class="class-filter-bar" style="margin: 0; padding: 0; background: transparent; border: none; box-shadow: none; display: flex; align-items: center; gap: 4px;">
+                                        <span style="font-size: 0.72rem; font-weight: 700; color: #64748b; margin-right: 2px;"><i class="fa-solid fa-filter"></i> Class:</span>
+                                        <button type="button" class="btn-class-pill active" data-class="ALL" id="btnClassALL" style="padding: 2px 7px; font-size: 0.7rem; border-radius: 4px;"><i class="fa-solid fa-layer-group"></i> All</button>
+                                        <button type="button" class="btn-class-pill" data-class="CSE" id="btnClassCSE" style="padding: 2px 7px; font-size: 0.7rem; border-radius: 4px;">CSE</button>
+                                        <button type="button" class="btn-class-pill" data-class="ECE" id="btnClassECE" style="padding: 2px 7px; font-size: 0.7rem; border-radius: 4px;">ECE</button>
+                                    </div>
+                                    <div style="font-size: 0.73rem; font-weight: 700; color: #64748b;">
+                                        Present: <span style="color: #10b981; font-weight: 800;" id="classPresentCount">0</span> / Enrolled: <span id="classTotalCount" style="font-weight: 800;">0</span>
+                                    </div>
+                                </div>
+
                                 <!-- Live Enrolled Students Presence Grid -->
                                 <div>
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                        <h4 style="margin: 0; font-size: 0.88rem; font-weight: 700; color: #334155;">
-                                            <i class="fa-solid fa-user-check"></i> Class Student Roster Presence:
-                                        </h4>
-                                        <div style="font-size: 0.78rem; font-weight: 700; color: #64748b;">
-                                            Present: <span style="color: #10b981; font-weight: 800;" id="classPresentCount">0</span> / Enrolled: <span id="classTotalCount" style="font-weight: 800;">0</span>
-                                        </div>
-                                    </div>
-
-                                    <div class="live-student-grid" id="liveStudentsPresenceGrid" style="max-height: 380px; overflow-y: auto; padding-right: 4px;">
-                                        <div style="text-align: center; color: #94a3b8; grid-column: 1 / -1; padding: 24px;">Loading class roster presence...</div>
+                                    <div class="live-student-grid" id="liveStudentsPresenceGrid" style="max-height: 420px; overflow-y: auto; padding-right: 4px;">
+                                        <div style="text-align: center; color: #94a3b8; grid-column: 1 / -1; padding: 20px;">Loading class roster presence...</div>
                                     </div>
                                 </div>
                             </div>
