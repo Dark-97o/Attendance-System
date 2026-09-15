@@ -21,7 +21,7 @@ class LivenessDetector:
     """Production-grade edge liveness detector with phone detection and smile verification."""
 
     def __init__(self,
-                 verification_timeout_frames: int = 80,
+                 verification_timeout_frames: int = 25,
                  blink_drop_threshold: float = 0.28,
                  smile_expansion_threshold: float = 0.12):
         self.timeout_frames = verification_timeout_frames
@@ -32,6 +32,8 @@ class LivenessDetector:
         self.yolo = None
         self.frame_scan_counter = 0
         self.last_detected_phones = []
+        self.last_frame_id = None
+        self.cached_phones_for_frame = []
         yolo_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "yolov8n.onnx")
         if os.path.exists(yolo_path):
             try:
@@ -40,13 +42,22 @@ class LivenessDetector:
             except Exception as ye:
                 logger.warning(f"Could not load YOLOv8n: {ye}")
 
-    def scan_for_phones(self, frame: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        """Scans frame for mobile phones using YOLOv8n every 3rd frame."""
-        if self.yolo is None:
+    def scan_for_phones(self, frame: np.ndarray, force: bool = False) -> List[Tuple[int, int, int, int]]:
+        """Scans frame for mobile phones and digital screens using YOLOv8n with Frame-1 instant detection."""
+        if self.yolo is None or frame is None or frame.size == 0:
             return []
 
+        current_frame_id = id(frame)
+        if current_frame_id == self.last_frame_id and not force:
+            return self.cached_phones_for_frame
+
+        self.last_frame_id = current_frame_id
         self.frame_scan_counter += 1
-        if self.frame_scan_counter % 3 != 0:
+
+        # If a phone was already detected, refresh every 2 frames for CPU performance.
+        # If no phone is detected yet, scan immediately on Frame 1 (no skipping delay)!
+        if not force and self.last_detected_phones and (self.frame_scan_counter % 2 != 0):
+            self.cached_phones_for_frame = self.last_detected_phones
             return self.last_detected_phones
 
         h, w = frame.shape[:2]
@@ -54,9 +65,13 @@ class LivenessDetector:
         self.yolo.setInput(blob)
         out = self.yolo.forward()[0].T  # Shape: (8400, 84)
 
-        # Class 67 in COCO is 'cell phone'
-        cell_phone_scores = out[:, 4 + 67]
-        mask = cell_phone_scores >= 0.28
+        # Classes in COCO: 67 (cell phone), 62 (tv / screen / monitor / tablet), 63 (laptop)
+        scores_cell = out[:, 4 + 67]
+        scores_tv = out[:, 4 + 62]
+        scores_lap = out[:, 4 + 63]
+        max_scores = np.maximum(scores_cell, np.maximum(scores_tv, scores_lap))
+
+        mask = max_scores >= 0.18
         filtered = out[mask]
 
         boxes = []
@@ -66,35 +81,48 @@ class LivenessDetector:
 
         for row in filtered:
             cx, cy, bw, bh = row[:4]
-            score = float(row[4 + 67])
+            score = float(max(row[4 + 67], row[4 + 62], row[4 + 63]))
             left = int((cx - bw / 2) * x_factor)
             top = int((cy - bh / 2) * y_factor)
             boxes.append([left, top, int(bw * x_factor), int(bh * y_factor)])
             confidences.append(score)
 
-        indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.28, 0.45)
+        indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.18, 0.40)
         self.last_detected_phones = [tuple(boxes[i]) for i in indices.flatten()] if len(indices) > 0 else []
+        self.cached_phones_for_frame = self.last_detected_phones
         return self.last_detected_phones
 
     def is_phone_near_face(self, face_bbox: Tuple[int, int, int, int], phone_boxes: List[Tuple[int, int, int, int]]) -> bool:
-        """Determines if a detected mobile phone is in front of or overlapping the face."""
+        """Determines if a detected mobile phone / screen is presenting or overlapping the face."""
         fx, fy, fw, fh = face_bbox
         fcx, fcy = fx + fw / 2.0, fy + fh / 2.0
 
         for (px, py, pw, ph) in phone_boxes:
-            # Overlap check (any overlap = spoof)
+            pcx, pcy = px + pw / 2.0, py + ph / 2.0
+
+            # 1. Direct overlap check
             xA = max(fx, px)
             yA = max(fy, py)
             xB = min(fx + fw, px + pw)
             yB = min(fy + fh, py + ph)
-            interArea = max(0, xB - xA) * max(0, yB - yA)
-            if interArea > 0:
+            if xB > xA and yB > yA:
                 return True
 
-            # Proximity check: phone center within 1.0x face size (tighter than before)
-            pcx, pcy = px + pw / 2.0, py + ph / 2.0
+            # 2. Face center inside phone, or phone center inside face (face displayed on screen)
+            if (px <= fcx <= px + pw and py <= fcy <= py + ph) or \
+               (fx <= pcx <= fx + fw and fy <= pcy <= fy + fh):
+                return True
+
+            # 3. Minimum edge-to-edge distance between face and phone rectangles (adjacent/touching)
+            dx = max(0, max(fx - (px + pw), px - (fx + fw)))
+            dy = max(0, max(fy - (py + ph), py - (fy + fh)))
+            edge_dist = np.sqrt(dx * dx + dy * dy)
+            if edge_dist <= max(fw, fh) * 0.75:
+                return True
+
+            # 4. Center-to-center proximity check (handheld presentation attack)
             dist = np.sqrt((fcx - pcx)**2 + (fcy - pcy)**2)
-            if dist < max(fw, fh) * 1.0:
+            if dist <= max(fw, fh) * 1.5:
                 return True
 
         return False
@@ -283,7 +311,7 @@ class LivenessDetector:
         high_freq_mask = (dist_from_center > 42) & (dist_from_center < 62)
         max_outer_spike = float(np.max(magnitude_spectrum[high_freq_mask])) if np.any(high_freq_mask) else 0.0
 
-        if max_outer_spike > 215.0:
+        if max_outer_spike > 206.0:
             return False, round(max_outer_spike, 1), f"Screen Moiré Spike ({max_outer_spike:.1f})"
 
         return True, round(max_outer_spike, 1), "Organic Texture"
@@ -295,12 +323,10 @@ class LivenessDetector:
                               full_frame: np.ndarray,
                               tracked_face: Any) -> Dict[str, Any]:
         """
-        Hybrid Multi-Layer Liveness Evaluation:
-        1. Mobile Phone Object Detection (YOLOv8n): Instant spoof rejection if a phone is in frame.
-        2. Screen Moiré Texture Filter (FFT).
-        3. Fast Smile / Expression Verification: Instant < 1s verification for real students!
-        4. Dual-Eye Biological Blink Verification.
-        5. Planar Geometry Rigidity Check: Static photos with zero expression change time out to SPOOF.
+        Hybrid Liveness Evaluation:
+        1. Mobile Phone / Screen Object Detection (YOLOv8n): Instant spoof rejection if a phone is in frame.
+        2. Fast Smile / Expression Verification: Instant < 1s verification for real students!
+        3. Dual-Eye Biological Blink Verification.
         """
         # --- LAYER 1: MOBILE PHONE OBJECT DETECTION ---
         detected_phones = self.scan_for_phones(full_frame)
@@ -317,42 +343,12 @@ class LivenessDetector:
                 "texture_score": 0.0
             }
 
-        # --- LAYER 2: SCREEN MOIRÉ TEXTURE ANALYSIS ---
-        tex_live, tex_score, tex_reason = self.evaluate_texture_liveness(face_crop)
-        if not tex_live:
-            if tracked_face:
-                tracked_face.is_live = False
-                tracked_face.liveness_state = "SPOOF"
-                tracked_face.liveness_reason = f"Spoof: {tex_reason}"
-            return {
-                "is_live": False,
-                "state": "SPOOF",
-                "reason": f"Spoof: {tex_reason}",
-                "texture_score": tex_score
-            }
-
-        # --- LAYER 2b: FLAT SURFACE GRADIENT ENTROPY CHECK ---
-        # Only block if the crop is large enough to be meaningful (avoids distant-face false positives)
-        if face_crop.shape[0] >= 64 and face_crop.shape[1] >= 64:
-            is_real_surface, grad_entropy = self.evaluate_flat_surface(face_crop)
-            if not is_real_surface:
-                if tracked_face:
-                    tracked_face.is_live = False
-                    tracked_face.liveness_state = "SPOOF"
-                    tracked_face.liveness_reason = f"Flat Photo (entropy={grad_entropy:.2f})"
-                return {
-                    "is_live": False,
-                    "state": "SPOOF",
-                    "reason": f"Spoof: Flat Photo Detected (gradient entropy={grad_entropy:.2f})",
-                    "texture_score": tex_score
-                }
-
         if raw_landmarks is None or len(raw_landmarks) < 10 or tracked_face is None:
             return {
                 "is_live": False,
                 "state": "PENDING",
                 "reason": "Smile or blink to verify",
-                "texture_score": tex_score
+                "texture_score": 0.0
             }
 
         # Initialize tracking histories
@@ -397,29 +393,20 @@ class LivenessDetector:
                 tracked_face.liveness_state = "LIVE"
                 logger.info(f"Track {tracked_face.track_id}: Genuine biological eye blink verified!")
 
-        frames_active = getattr(tracked_face, "frames_active", 1)
-
-        # --- LAYER 5: SECURITY STATE MACHINE ---
+        # --- STATE MACHINE ---
+        # Only phone/screen hardware detection (Layer 1) triggers SPOOF.
+        # Real students who haven't blinked or smiled stay in PENDING indefinitely.
         if tracked_face.is_live:
             return {
                 "is_live": True,
                 "state": "LIVE",
                 "reason": "Verified Live Human",
-                "texture_score": tex_score
+                "texture_score": 0.0
             }
-        elif frames_active < self.timeout_frames:
-            # Welcoming prompt for real students: smile or blink naturally
+        else:
             return {
                 "is_live": False,
                 "state": "PENDING",
                 "reason": "Smile or blink naturally to verify",
-                "texture_score": tex_score
-            }
-        else:
-            # Verification window expired: Frozen static photo attack blocked!
-            return {
-                "is_live": False,
-                "state": "SPOOF",
-                "reason": "Spoof: Static Photo (No Expression/Blink)",
-                "texture_score": tex_score
+                "texture_score": 0.0
             }
