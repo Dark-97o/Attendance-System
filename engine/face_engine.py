@@ -353,8 +353,8 @@ class FaceEngine:
                 else:
                     # Lecture Inactive: Face Recognized Live, Session Pending
                     box_color = (0, 215, 255)  # Cyan/Gold
-                    label = f"• {meta['name']} [LIVE]"
-                    sub_label = f"Session Inactive | Match: {int(conf * 100)}%"
+                    label = f"✓ {meta['name']} [LIVE]"
+                    sub_label = f"Session Inactive - Click 'Start Lecture'"
                 
                 recognized_students.append({
                     "student_id": sid,

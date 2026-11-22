@@ -803,6 +803,7 @@ const App = {
             this.fetchSessionStatus();
         } else if (msg.type === "ATTENDANCE_RESET") {
             this.presentStudents.clear();
+            if (this.toastedStudents) this.toastedStudents.clear();
             const presentEl = document.getElementById('classPresentCount');
             if (presentEl) presentEl.textContent = 0;
             const kpiPresent = document.getElementById('kpiPresentCount');
@@ -822,6 +823,9 @@ const App = {
 
             if (sid && this.presentStudents.has(sid)) {
                 this.presentStudents.delete(sid);
+                if (this.toastedStudents) this.toastedStudents.delete(sid);
+                const kpiPresent = document.getElementById('kpiPresentCount');
+                if (kpiPresent) kpiPresent.textContent = this.presentStudents.size;
                 this.renderLiveClassPresence();
                 this.showToast(`🚨 ATTENDANCE REVOKED: ${sname} marked ABSENT (${reason})`, "error");
             }
@@ -1163,7 +1167,11 @@ const App = {
             });
         }
 
-        if (data.is_new_entry) {
+        if (!this.toastedStudents) {
+            this.toastedStudents = new Set();
+        }
+        if (data.is_new_entry && !this.toastedStudents.has(student.student_id)) {
+            this.toastedStudents.add(student.student_id);
             this.showToast(`${student.name} marked PRESENT`, "success");
         }
     },
@@ -2863,3 +2871,8 @@ ECE,Tuesday,10:00,11:00,Digital Electronics,Prof. Claude Shannon,FAC-ECE-01,Room
 };
 
 document.addEventListener('DOMContentLoaded', () => App.init());
+
+// Toast notification helper
+function showSystemToast(message, type = 'info') {
+    console.log(`[Toast ${type.toUpperCase()}]: ${message}`);
+}

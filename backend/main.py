@@ -115,23 +115,25 @@ def background_inference_loop():
         if recognized_students:
             att_mgr.process_recognized_students(recognized_students)
 
-        # Broadcast spoof attempts with debouncing (at most 1 per 2.5s unless spoof reason changes)
+        # Broadcast spoof attempts with debouncing (only once per track incident or every 15s)
         now_t = time.time()
         for tf in getattr(face_eng, "last_tracked_faces", []):
             if getattr(tf, "liveness_state", "") == "SPOOF":
                 spoof_reason = getattr(tf, "liveness_reason", "Photo / Screen Spoof")
                 sid = getattr(tf, "identity", None)
 
-                # CRITICAL SECURITY ENFORCEMENT:
-                # If someone was previously marked PRESENT and after that a mobile/spoof is detected,
-                # immediately revoke their attendance and mark them back to ABSENT!
+                # If this specific spoofed face (the identity shown on the phone)
+                # was marked present by mistake, immediately roll their attendance back to ABSENT!
                 if sid and att_mgr.is_student_present(sid):
                     att_mgr.revoke_student_attendance(sid, reason=spoof_reason)
 
-                if (now_t - last_spoof_broadcast_time > 2.5) or (spoof_reason != last_spoof_reason):
+                # Only the spoofed face (the image on the phone) is blocked/revoked.
+                # A legitimate real person elsewhere in the frame stays present.
+                if not getattr(tf, "spoof_alert_sent", False) or ((now_t - last_spoof_broadcast_time > 15.0) and (spoof_reason != last_spoof_reason)):
+                    tf.spoof_alert_sent = True
                     last_spoof_broadcast_time = now_t
                     last_spoof_reason = spoof_reason
-                    logger.warning(f"Anti-Spoof Alert: Presentation attack blocked ({spoof_reason})")
+                    logger.warning(f"Anti-Spoof Alert: Presentation attack blocked ({spoof_reason}) for Track {tf.track_id}")
                     broadcast_ws_event("SPOOF_DETECTED", {
                         "track_id": tf.track_id,
                         "student_id": sid,
@@ -380,8 +382,12 @@ async def websocket_endpoint(websocket: WebSocket):
             active_websockets.remove(websocket)
 
 # Static files for 7-Inch Touchscreen UI
-FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
-FACES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "faces")
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRONTEND_DIR = os.path.join(ROOT_DIR, "frontend")
+if not os.path.exists(FRONTEND_DIR) or not os.path.exists(os.path.join(FRONTEND_DIR, "index.html")):
+    FRONTEND_DIR = ROOT_DIR
+
+FACES_DIR = os.path.join(ROOT_DIR, "data", "faces")
 os.makedirs(FACES_DIR, exist_ok=True)
 
 if os.path.exists(FRONTEND_DIR):

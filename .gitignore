@@ -51,3 +51,8 @@ scratch/raw_frame.jpg
 .pytest_cache/
 .coverage
 htmlcov/
+
+# SQLite WAL and temporary lock files
+*.db-shm
+*.db-wal
+

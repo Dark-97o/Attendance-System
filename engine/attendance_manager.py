@@ -17,7 +17,7 @@ class AttendanceManager:
     """Coordinates teacher fingerprint session gating and real-time student attendance."""
 
     def __init__(self, db: DatabaseManager, fingerprint_mgr: FingerprintManager,
-                 min_dwell_frames: int = 15, debounce_seconds: float = 20.0):
+                 min_dwell_frames: int = 3, debounce_seconds: float = 20.0):
         self.db = db
         self.fingerprint_mgr = fingerprint_mgr
         self.min_dwell_frames = min_dwell_frames
@@ -194,8 +194,8 @@ class AttendanceManager:
                     status="PRESENT"
                 )
 
-                # Broadcast live event if it's a new entry or debounce timer expired
-                if is_new or (now - last_alert >= self.debounce_seconds):
+                # Broadcast live event strictly when it's a new entry (avoid duplicate notification spam)
+                if is_new:
                     self.student_track_state[sid]["last_alert_time"] = now
                     event_payload = {
                         "record": record,
@@ -205,9 +205,8 @@ class AttendanceManager:
                         "timestamp": datetime.now().strftime("%H:%M:%S")
                     }
                     self._broadcast("STUDENT_MARKED", event_payload)
-                    if is_new:
-                        logger.info(f"Attendance MARKED: {st['name']} ({st['roll_number']}) - Conf: {conf}")
-                        self.db.log_event("ATTENDANCE_MARKED", f"Student {st['name']} marked present", metadata=st)
+                    logger.info(f"Attendance MARKED: {st['name']} ({st['roll_number']}) - Conf: {conf}")
+                    self.db.log_event("ATTENDANCE_MARKED", f"Student {st['name']} marked present", metadata=st)
 
 def format_attendance_event(student_name: str, roll_no: str, status: str = "PRESENT") -> str:
     """Formats human-readable attendance event log."""
